@@ -17,6 +17,9 @@ slint::include_modules!();
 mod autostart;
 mod media;
 
+#[cfg(debug_assertions)]
+mod notif_probe;
+
 const MAX_ATTEMPTS: u32 = 20;
 const RETRY_MS: u64 = 50;
 
@@ -181,6 +184,14 @@ fn main() -> Result<(), slint::PlatformError> {
         let _ = slint::quit_event_loop();
     });
 
+        // probe langkah 10 (hanya build debug)
+    #[cfg(debug_assertions)]
+    std::thread::spawn(|| {
+        if let Err(e) = notif_probe::probe() {
+            eprintln!("[notif] GAGAL: {e}");
+        }
+    });
+    
      // pasang style jendela pertama kali (sama seperti sebelumnya)
     let weak = ui.as_weak();
     Timer::single_shot(Duration::from_millis(RETRY_MS), move || try_apply(weak, 1));

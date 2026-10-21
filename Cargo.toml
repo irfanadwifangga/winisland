@@ -7,7 +7,7 @@ build = "build.rs"
 [dependencies]
 raw-window-handle = "0.6"
 slint = { version = "1.18.1", default-features = false, features = ["compat-1-18", "std", "backend-winit", "renderer-software", "system-tray", "raw-window-handle-06", "accessibility"] }
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Media_Control", "Foundation"] }
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Media_Control", "Foundation", "UI_Notifications_Management"] }
 winreg = "0.56.0"
 
 [build-dependencies]
