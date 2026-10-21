@@ -1,0 +1,12 @@
+[package]
+name = "winisland"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+slint = "1.18.1"
+windows = { version = "0.62.2", features = ["Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+slint-build = "1.18.1"

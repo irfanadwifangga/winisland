@@ -1,0 +1,24 @@
+export component MainWindow inherits Window {
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    width: 400px;
+    height: 120px;
+
+    in-out property <bool> expanded: false;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 8px;
+        width: root.expanded ? 360px : 140px;
+        height: root.expanded ? 100px : 32px;
+        border-radius: min(self.height / 2, 28px);
+        background: black;
+
+        animate width, height { duration: 250ms; easing: ease-out; }
+
+        TouchArea {
+            clicked => { root.expanded = !root.expanded; }
+        }
+    }
+}
