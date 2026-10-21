@@ -27,3 +27,25 @@ export component MainWindow inherits Window {
         }
     }
 }
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("tray.png");
+    tooltip: "winisland";
+
+    callback toggle();
+    callback quit();
+
+    clicked => { toggle(); }
+
+    Menu {
+        MenuItem {
+            title: "Show / Hide";
+            activated => { toggle(); }
+        }
+
+        MenuItem {
+            title: "Quit";
+            activated => { quit(); }
+        }
+    }
+}

@@ -76,9 +76,15 @@ fn try_apply(weak: slint::Weak<MainWindow>, attempt: u32) {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    slint::BackendSelector::new()
+    .backend_name("winit".into())
+    .renderer_name("software".into())
+    .select()?;
+    
     let ui = MainWindow::new()?;
     ui.show()?;
 
+    // --- hover expand/collapse
     let shrink_timer = Rc::new(Timer::default());
     {
         let weak = ui.as_weak();
@@ -105,8 +111,35 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // --- tray ---
+    let tray = AppTray::new()?;
+
+    let toggle = {
+        let weak = ui.as_weak();
+        Rc::new(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if ui.window().is_visible() {
+                let _ = ui.hide();
+            } else {
+                ui.set_expanded(false);
+                let _ = ui.show();
+                // jendela bisa dibuat ulang saat show(): pasang style lagi
+                try_apply(weak.clone(), 1);
+            }
+        })
+    };
+    {
+        let t = toggle.clone();
+        tray.on_toggle(move || t());
+    }
+    
+    tray.on_quit(|| {
+        let _ = slint::quit_event_loop();
+    });
+
+     // pasang style jendela pertama kali (sama seperti sebelumnya)
     let weak = ui.as_weak();
     Timer::single_shot(Duration::from_millis(RETRY_MS), move || try_apply(weak, 1));
 
-    ui.run()
+    slint::run_event_loop()
 }
