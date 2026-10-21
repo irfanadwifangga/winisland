@@ -22,7 +22,8 @@ Dokumen ini dibuat untuk dibawa ke sesi baru. Bagian 0 adalah ringkasan konteks 
   4. Selesai: lisensi (opsi B) dan dokumen repo, commit `b2bdb01`. Sisa: cek lisensi transitif dengan `cargo-deny` atau `cargo-license` sebelum rilis.
   5. Tes `drop-shadow-*` pada software renderer belum dilakukan (dokumentasi menyebut belum didukung).
   6. Belum diuji: judul non-Latin (Jepang, Korea, emoji) di pill, pemutar yang melaporkan judul kosong, monitor kedua dan DPI, game fullscreen eksklusif, rendering emoji di software renderer (relevan untuk notifikasi).
-\1- **Langkah berikutnya (mulai sesi baru dari sini):** (1) pastikan probe 10b dan dokumen ini sudah di-commit dan di-push; (2) ukur RAM 9d-2; (3) putuskan desain notifikasi (bagian \"Hasil langkah 10b\"); (4) setelah desain disetujui, tulis kode dalam kelompok kecil seperti biasa. Claude tidak bisa mengompilasi (sandbox bukan Windows, tanpa `cargo`): semua kode lewat `cargo check` pengguna. Kirim **berkas utuh** bila patch gagal (`git apply` pernah menolak patch yang utuh di sandbox karena berkas berubah saat diunduh).
+- **Berkas lokal yang sengaja belum di-commit:** `run-all.ps1`, `measure.ps1`, `cleanup.ps1` di folder proyek (pengukuran; `run-all.ps1` mengubah `Cargo.toml` sementara).
+- **Langkah berikutnya (mulai sesi baru dari sini):** (1) selesai: probe 10b ada di commit `f891c66`; (2) ukur RAM 9d-2; (3) putuskan desain notifikasi (bagian "Hasil langkah 10b"); (4) setelah desain disetujui, tulis kode dalam kelompok kecil seperti biasa. Claude tidak bisa mengompilasi (sandbox bukan Windows, tanpa `cargo`): semua kode lewat `cargo check` pengguna. Kirim **berkas utuh** bila patch gagal (`git apply` pernah menolak patch yang utuh di sandbox karena berkas berubah saat diunduh).
 - **Cara kerja:** satu kelompok perubahan kecil, verifikasi dengan checklist, commit memakai pesan yang hanya mengklaim yang sudah dilaporkan, perbarui dokumen ini, baru lanjut. Verifikasi nama feature dan API di dokumentasi sesuai versi crate yang terpasang, jangan menebak (pelajaran dari `get()` vs `join()`).
 - **Peran Claude:** instruktur/analis kritis. Timbang pro-kontra sebelum merekomendasikan, sampaikan ketidaksetujuan bila perlu, dan akui bila data membantah dugaan sebelumnya.
 
@@ -360,8 +361,9 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | Autostart saat login | **Lolos** (build release, lokasi tetap) | Tanpa terminal, ikon tray ada, terdaftar di Startup apps. Batasan yang diketahui: jika dimatikan dari Settings > Apps > Startup, menu tetap menampilkan "On" (jalur `StartupApproved` tidak dibaca) |
 | Animasi halus, RAM, CPU | RAM dan CPU baseline terukur (langkah 4). Animasi dinilai mulus di software renderer (laporan pengguna) | Pengukuran lengkap tetap di langkah 8 |
 | SMTC pada aplikasi unpackaged | **Lolos** (9a) | Tanpa error akses atau inisialisasi COM, `join()` di thread latar langsung bekerja. Pembacaan sesi aktif dikonfirmasi dengan video browser |
-\1| Membaca isi notifikasi (10b) | **Lolos** | `GetNotificationsAsync(Toast)` mengembalikan 27 notifikasi aktif lengkap dengan nama aplikasi dan teks (judul + isi) tanpa package identity |
-| Event `NotificationChanged` (10b) | **Gagal** | Registrasi mengembalikan `Element not found` (0x80070490) pada aplikasi unpackaged. Penyebab pastinya tidak dinyatakan oleh pesan error; dugaan kuat: butuh package identity (belum dikonfirmasi) |
+| UserNotificationListener pada aplikasi unpackaged (10a) | **Lolos sebagian** | `RequestAccessAsync` mengembalikan `Allowed` (status 1) dari thread latar. Status ini tidak menjamin semua API berjalan tanpa package identity: pembacaan daftar lolos, event gagal (dua baris berikut) |
+| Membaca isi notifikasi (10b) | **Lolos** | `GetNotificationsAsync(Toast)` mengembalikan 27 notifikasi aktif lengkap dengan nama aplikasi dan teks (judul + isi) tanpa package identity |
+| Event `NotificationChanged` (10b) | **Gagal** | Registrasi mengembalikan `Element not found` (0x80070490) pada aplikasi unpackaged. Penyebab pastinya tidak dinyatakan oleh pesan error; dugaan kuat: butuh package identity (didukung banyak laporan komunitas, belum dikonfirmasi dokumentasi Microsoft untuk API ini) |
 | Event SMTC dan kontrol media (9c, 9d) | **Lolos** | Event `MediaPropertiesChanged`, `PlaybackInfoChanged`, `CurrentSessionChanged` menembak pada aplikasi unpackaged; `TryTogglePlayPauseAsync` dan skip bekerja tanpa `join()` |
 
 ### Perubahan dependensi sejauh ini
@@ -376,7 +378,7 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 
 - Langkah 10b: `windows` ditambah feature `ApplicationModel` dan `Foundation_Collections` (dibutuhkan `GetNotificationsAsync`, yang mengembalikan `IVectorView`, dan `AppInfo`). Dipakai hanya oleh probe (build debug).
 
-\1
+### Catatan implementasi (supaya tidak mengulang kesalahan)
 
 - Handle jendela baru tersedia setelah event loop berjalan. Style `WS_EX_TOOLWINDOW` dan `WS_EX_NOACTIVATE` dipasang lewat timer di dalam event loop dengan percobaan ulang terbatas (`try_apply`), dan dipasang ulang setiap kali jendela di-`show()`.
 - Ukuran dan posisi jendela diatur dari Rust (`place`, dalam piksel logis lalu dikonversi ke fisik). Jendela membesar dulu sebelum animasi expand dan mengecil 280 ms setelah collapse.
@@ -395,7 +397,7 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 - Slint `TouchArea` bersarang: `has-hover` induk tetap `true` saat kursor di atas `TouchArea` anak (source `i-slint-core` 1.18.1, dan terbukti di uji 9d-2). Letakkan `TouchArea` tombol setelah `@children` supaya berada di atas ikon.
 - Perintah kontrol media dijalankan fire-and-forget (`TryXAsync()` tanpa `join()`); operasi tetap berjalan setelah objeknya di-drop (terbukti di uji 9d-2).
 
-\1
+### Prosedur langkah 8
 
 **Feature Slint 1.18.1 yang terverifikasi** (halaman `docs.slint.dev/latest/docs/rust/slint/docs/cargo_features/`):
 
@@ -642,7 +644,7 @@ Langkah selanjutnya: membaca daftar notifikasi aktif lewat `GetNotificationsAsyn
 | Setelah 9b | 7,33 | 2,89 | 3,88 | 25,13 | 0% |
 | Setelah 9c (event + worker) | 7,34 | 2,83 | 3,93 | 25,01 | 0% |
 | Setelah 9d-1 (ikon status) | 7,35 | 2,93 | 3,98 | 25,42 | 0% |
-| Setelah 9d-2 (tombol) | belum diukur | | | | |
+| Setelah 9d-2 (tombol) | belum diukur |  |  |  |  |
 
 - Dugaan bahwa thread permanen dan langganan event menaikkan RAM **dibantah data** (9c: private WS turun 0,06 MB, dalam derau). CPU hover 0,172 dtk-CPU (9c) dan 0,109 (9d-1).
 - Uji fungsional: 9c lulus (ganti lagu, pindah pemutar, tanpa media, skip cepat), 9d-1 lolos semua, 9d-2 lolos semua (pill tidak collapse di atas tombol, klik tidak mencuri fokus, ikon ikut berganti, previous/next/play-pause bekerja, klik beruntun cepat aman, tata letak muat). Semuanya laporan pengguna.
@@ -657,7 +659,7 @@ Probe di `src/notif_probe.rs` (debug-only) membaca daftar toast aktif dan mencob
 
 **Pengamatan dari data nyata (penting untuk desain):**
 
-1. Daftar berisi **isi Action Center**, bukan hanya notifikasi baru. Ada banyak entri lama; tanpa event, \"notifikasi baru\" hanya bisa diketahui dengan membandingkan daftar antar-pembacaan.
+1. Daftar berisi **isi Action Center**, bukan hanya notifikasi baru. Ada banyak entri lama; tanpa event, "notifikasi baru" hanya bisa diketahui dengan membandingkan daftar antar-pembacaan.
 2. **Duplikat**: teks yang sama muncul berkali-kali (Antigravity 5x dengan judul sama, NVIDIA App 5x). Perlu dedup/pengelompokan per (aplikasi, teks).
 3. **Urutan daftar tidak menurut id** (id 75225 muncul paling akhir setelah 75265). Jangan mengandalkan urutan; pakai `CreationTime()` untuk menentukan yang terbaru.
 4. **Isi sensitif** terbaca penuh: pesan WhatsApp (nama grup, pengirim, isi), keluaran agen AI (perintah, path, data mesin). Bila ditampilkan di overlay yang selalu di atas semua jendela, isi bisa terlihat orang lain atau saat berbagi layar.
@@ -667,11 +669,15 @@ Probe di `src/notif_probe.rs` (debug-only) membaca daftar toast aktif dan mencob
 
 | Opsi | Pro | Kontra |
 | --- | --- | --- |
-| **B. Baca saat pill expanded** (lewat `refresh()` yang sudah ada, tanpa event) | Nol biaya idle, arsitektur worker sudah siap, tidak ada polling | Notifikasi yang masuk saat pill collapsed baru terlihat setelah hover; \"baru\" harus ditentukan dengan diff daftar |
-| **B+. B ditambah polling lambat** (mis. 5-10 detik) untuk memunculkan notifikasi baru otomatis | Fitur \"peek\" ala Dynamic Island mungkin dilakukan | Wake-up periodik bertentangan dengan prioritas RAM/CPU idle; biaya harus diukur |
+| **B. Baca saat pill expanded** (lewat `refresh()` yang sudah ada, tanpa event) | Nol biaya idle, arsitektur worker sudah siap, tidak ada polling | Notifikasi yang masuk saat pill collapsed baru terlihat setelah hover; "baru" harus ditentukan dengan diff daftar |
+| **B+. B ditambah polling lambat** (mis. 5-10 detik) untuk memunculkan notifikasi baru otomatis | Fitur "peek" ala Dynamic Island mungkin dilakukan | Wake-up periodik bertentangan dengan prioritas RAM/CPU idle; biaya harus diukur |
 | **C. Tunda notifikasi** | Nol risiko dan nol RAM | Kehilangan fitur utama aplikasi sejenis |
 
 **Rekomendasi (dari analisis sesi ini, belum diputuskan pengguna):** mulai dari **B**, ukur RAM, dan pertimbangkan B+ hanya bila memang perlu. **Privasi: default hanya nama aplikasi + judul, tanpa isi**, dengan opsi menampilkan isi di menu tray. Tampilan butuh mode sendiri di pill (pill 116 px sudah terisi teks dan tombol media).
+
+**Bukti tambahan (pencarian, 21 Okt 2026):** beberapa laporan komunitas independen (tanya-jawab WinForms dan WPF, plus proyek pihak ketiga yang membaca notifikasi) menggambarkan gejala yang **identik**: `RequestAccessAsync` mengembalikan `Allowed`, tetapi mendaftarkan `NotificationChanged` melempar `0x80070490`; perbaikannya selalu package identity (proyek WPF dibungkus Windows Application Packaging Project, atau paket sparse dengan skrip pendaftaran identitas yang dijalankan sebagai administrator). Ini memperkuat dugaan penyebab, tetapi sumbernya komunitas, bukan pernyataan Microsoft untuk API ini. Satu laporan menyebut pembacaan notifikasi juga butuh identity; data probe kita **membantahnya untuk `GetNotificationsAsync` di mesin ini**. Perilaku itu baru teruji di satu mesin dan satu build Windows, jadi bisa berbeda di mesin lain.
+
+**Kebersihan data:** isi notifikasi nyata (nama, potongan pesan) tidak boleh masuk repo publik, issue, atau pesan commit. Pencarian di HEAD dan riwayat commit pada 21 Okt 2026 tidak menemukannya.
 
 **Risiko yang masih terbuka:** perilaku Focus/Do Not Disturb (apakah notifikasi yang ditekan tetap muncul di daftar) belum diuji; notifikasi yang di-update aplikasi yang sama (mis. progres) bisa membuat tampilan berkedip; biaya RAM membaca daftar berulang belum diukur.
 
