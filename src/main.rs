@@ -3,6 +3,7 @@
 use core::ffi::c_void;
 use std::rc::Rc;
 use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, PhysicalPosition, PhysicalSize, Timer, TimerMode};
@@ -63,6 +64,32 @@ fn place(ui: &MainWindow, w: f32, h: f32) {
     eprintln!("[overlay] place {pw}x{ph}");
 }
 
+static FETCHING: AtomicBool = AtomicBool::new(false);
+
+/// Baca info media di thread latar, lalu kirim hasilnya ke UI.
+/// Lewati bila pembacaan sebelumnya belum selesai (mencegah tumpukan thread
+/// saat kursor keluar-masuk dengan cepat).
+fn refresh_media(weak: slint::Weak<MainWindow>) {
+    if FETCHING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let (title, artist) = match media::read_now_playing() {
+            Ok(Some(m)) => (m.title, m.artist),
+            Ok(None) => ("Nothing playing".to_string(), String::new()),
+            Err(e) => {
+                eprintln!("[media] GAGAL: {e}");
+                ("Nothing playing".to_string(), String::new())
+            }
+        };
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            ui.set_track_title(title.into());
+            ui.set_track_artist(artist.into());
+        });
+        FETCHING.store(false, Ordering::Release);
+    });
+}
+
 fn try_apply(weak: slint::Weak<MainWindow>, attempt: u32) {
     let Some(ui) = weak.upgrade() else { return };
     if apply_overlay_style(&ui) {
@@ -82,13 +109,6 @@ fn main() -> Result<(), slint::PlatformError> {
     .backend_name("winit".into())
     .renderer_name("software".into())
     .select()?;
-
-    // 9a: uji baca SMTC di thread latar (hasil hanya dicetak ke konsol)
-    std::thread::spawn(|| match media::read_now_playing() {
-        Ok(Some(m)) => eprintln!("[media] sedang diputar: {} - {}", m.artist, m.title),
-        Ok(None) => eprintln!("[media] tidak ada media yang diputar"),
-        Err(e) => eprintln!("[media] GAGAL: {e}"),
-    });
     
     let ui = MainWindow::new()?;
     ui.show()?;
@@ -104,6 +124,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 timer.stop();
                 place(&ui, FULL_W, FULL_H); // jendela membesar dulu
                 ui.set_expanded(true); // baru konten beranimasi
+                refresh_media(weak.clone()); // 9b: baca media di latar
             } else {
                 ui.set_expanded(false); // konten mengecil dulu
                 let weak2 = weak.clone();

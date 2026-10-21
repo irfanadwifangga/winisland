@@ -6,6 +6,8 @@ export component MainWindow inherits Window {
     preferred-height: 4px;
 
     in-out property <bool> expanded: false;
+    in-out property <string> track-title: "";
+    in-out property <string> track-artist: "";
     callback hover-changed(bool);
 
     property <bool> hovered: area.has-hover;
@@ -19,10 +21,36 @@ export component MainWindow inherits Window {
             height: root.expanded ? 100px : 4px;
             border-radius: min(self.height / 2, 28px);
             background: black;
+            clip: true;
 
             animate width, height, y {
                 duration: 250ms;
                 easing: ease-out;
+            }
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 4px;
+                alignment: center;
+
+                Text {
+                    text: root.track-title;
+                    color: white;
+                    font-size: 16px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                    visible: root.expanded;
+                }
+
+                Text {
+                    text: root.track-artist;
+                    color: #b0b0b0;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                    overflow: elide;
+                    visible: root.expanded;
+                }
             }
         }
     }
