@@ -3998,6 +3998,7 @@ dependencies = [
  "num-traits",
  "once_cell",
  "pin-weak",
+ "raw-window-handle",
  "slint-macros",
  "unicode-segmentation",
  "vtable",
@@ -5378,6 +5379,7 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 name = "winisland"
 version = "0.1.0"
 dependencies = [
+ "raw-window-handle",
  "slint",
  "slint-build",
  "windows",
