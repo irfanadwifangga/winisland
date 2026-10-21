@@ -3,6 +3,10 @@ name = "winisland"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
+description = "A tiny Dynamic Island-style overlay for Windows, built for low memory use"
+license = "MIT"
+repository = "https://github.com/irfanadwifangga/winisland"
+publish = false
 
 [dependencies]
 raw-window-handle = "0.6"
