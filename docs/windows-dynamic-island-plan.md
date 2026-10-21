@@ -206,9 +206,9 @@ Tujuan: menjawab "apakah arah Rust + Slint layak?" dengan data, bukan opini.
 
 | Metrik | Target usulan | Target final (isi sendiri) |
 | --- | --- | --- |
-| RAM idle (private working set) | ≤ 30 MB | 20-30 MB (anggaran untuk fitur ke depan; terukur 2,6-2,9 MB sekarang) |
-| Ukuran `.exe` release | ≤ 10 MB | \_\_\_\_ MB |
-| CPU idle | mendekati 0% | \_\_\_\_ |
+| RAM idle (private working set) | ≤ 30 MB | Tanpa anggaran keras (diputuskan 21 Okt 2026); dicatat per fitur sebagai informasi. Terukur 2,93 MB (setelah 9d-1) |
+| Ukuran `.exe` release | ≤ 10 MB | Tanpa target keras (sekunder). Terukur 7,35 MB (build `dist`) |
+| CPU idle | mendekati 0% | Mendekati 0%. Terukur 0% di semua build yang diukur |
 
 **Lulus/gagal:**
 
@@ -288,8 +288,8 @@ Prinsip: satu fitur pembeda yang benar-benar kamu pakai sehari-hari, bukan menya
 - [x] C++ Build Tools terpasang
 - [x] `rustc --version` dan `cargo --version` berhasil
 - [x] Proyek `winisland` jalan dengan `cargo run`
-- [ ] Target angka final diisi (bagian 3)
-- [ ] Spike selesai dan hasil ukurnya dicatat (lihat bagian 8; urutan langkah sudah direvisi)
+- [x] Target angka final diisi (bagian 3): RAM dan `.exe` tanpa target keras, CPU idle mendekati 0%
+- [x] Spike selesai dan hasil ukurnya dicatat (lihat bagian 8): keempat kriteria lulus/gagal di bagian 3 terpenuhi; cek notifikasi hari pertama selesai dengan hasil campuran (membaca bisa, event gagal)
 - [x] Keputusan renderer setelah melihat data (software, femtovg dibuang)
 
 ---
