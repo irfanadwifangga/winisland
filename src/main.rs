@@ -13,6 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 slint::include_modules!();
+mod autostart;
 
 const MAX_ATTEMPTS: u32 = 20;
 const RETRY_MS: u64 = 50;
@@ -113,6 +114,20 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // --- tray ---
     let tray = AppTray::new()?;
+
+    // status awal centang menu mengikuti isi registry
+    tray.set_autostart(autostart::is_enabled());
+    {
+        let weak = tray.as_weak();
+        tray.on_toggle_autostart(move |wanted| {
+            let Some(tray) = weak.upgrade() else { return };
+            if let Err(e) = autostart::set_enabled(wanted) {
+                eprintln!("[autostart] gagal mengubah entri: {e}");
+            }
+            // selalu baca ulang dari registry agar centang menunjukkan keadaan sebenarnya
+            tray.set_autostart(autostart::is_enabled());
+        });
+    }
 
     let toggle = {
         let weak = ui.as_weak();

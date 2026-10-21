@@ -32,7 +32,10 @@ export component AppTray inherits SystemTrayIcon {
     icon: @image-url("tray.png");
     tooltip: "winisland";
 
+    in-out property <bool> autostart: false;
+
     callback toggle();
+    callback toggle-autostart(bool);
     callback quit();
 
     clicked => { toggle(); }
@@ -41,6 +44,11 @@ export component AppTray inherits SystemTrayIcon {
         MenuItem {
             title: "Show / Hide";
             activated => { toggle(); }
+        }
+
+        MenuItem {
+            title: root.autostart ? "Autostart: On" : "Autostart: Off";
+            activated => { toggle-autostart(!root.autostart); }
         }
 
         MenuItem {
