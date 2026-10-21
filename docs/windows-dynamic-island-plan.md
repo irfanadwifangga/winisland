@@ -12,18 +12,18 @@ Dokumen ini dibuat untuk dibawa ke sesi baru. Bagian 0 adalah ringkasan konteks 
 - **Prioritas:** RAM idle terkecil adalah yang utama. Metrik resmi: **private working set**, dengan commit sebagai pembanding. **Tidak ada anggaran keras** (diputuskan 21 Okt 2026: dibuat fleksibel supaya tidak perlu menghitung terus; angka 20-30 MB tidak lagi menjadi gerbang). Private working set tetap dicatat setiap kali fitur baru masuk, sebagai informasi dan pendeteksi lonjakan, bukan syarat lulus. Ukuran `.exe` sekunder dan tanpa target keras.
 - **Arah:** Rust native, Slint 1.18.1, renderer software dikunci lewat kode (`BackendSelector`), femtovg dibuang dari daftar feature, integrasi Windows lewat crate `windows` (windows-rs 0.62.2).
 - **Pengalaman:** pertama kali memakai Rust. Shell: PowerShell. Editor: VS Code. Teks UI berbahasa Inggris, komentar kode berbahasa Indonesia.
-- **Status (21 Okt 2026): langkah 0-9 selesai (9a-9d), langkah 10a dan 10b (probe notifikasi) selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry. Media: judul, artis, dan status play/pause dipantau lewat **event SMTC** (satu worker thread, debounce 150 ms, dedup), dengan tiga tombol di pill (previous, play/pause, next). Notifikasi: `GetNotificationsAsync` **bisa membaca** isi notifikasi pada aplikasi unpackaged, tetapi registrasi event `NotificationChanged` **gagal** (`Element not found`, 0x80070490), jadi pola event ala media tidak bisa dipakai untuk notifikasi.
+- **Status (21 Okt 2026): langkah 0-9 selesai (9a-9d), langkah 10a, 10b (probe) dan 10c (baca, bersihkan, kelompokkan notifikasi; belum ada UI) selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry. Media: judul, artis, dan status play/pause dipantau lewat **event SMTC** (satu worker thread, debounce 150 ms, dedup), dengan tiga tombol di pill (previous, play/pause, next). Notifikasi: `GetNotificationsAsync` **bisa membaca** isi notifikasi pada aplikasi unpackaged, tetapi registrasi event `NotificationChanged` **gagal** (`Element not found`, 0x80070490), jadi pola event ala media tidak bisa dipakai untuk notifikasi.
 - **Angka terkini (build `dist`, setelah 9d-1):** `.exe` 7,35 MB; private working set idle 2,93 MB; commit idle 3,98 MB; working set total idle 25,42 MB; CPU idle 0%. Perkembangan private WS: baseline langkah 8 2,55 menjadi 2,77 (9a) menjadi 2,89 (9b) menjadi 2,83 (9c) menjadi 2,93 (9d-1). **9d-2 (tombol) belum diukur** (ditunda pengguna ke akhir sesi). Selisih di bawah sekitar 0,2 MB masih dalam derau satu kali ukur.
 - **Keputusan yang sudah diambil:** software renderer (2,3 MB vs 42 MB pada femtovg), femtovg dibuang, `opt-level = "z"`, profil `[profile.dist]` terpisah dari `release` (repo publik). **Dibalik di 9c (21 Okt 2026):** media dibaca lewat langganan event SMTC (worker thread permanen), bukan saat hover, karena teks tidak berubah saat lagu berganti selama pill expanded. Hover tetap mengirim `refresh()` ke worker sebagai jaring pengaman bila event terlewat. Biaya RAM terbukti dalam derau.
 - **Keputusan dan pekerjaan terbuka:**
   1. Selesai: tidak ada anggaran RAM keras, tetap dicatat sebagai informasi.
   2. Selesai: 9c dan 9d (lihat bagian "Hasil langkah 9c-9d" di bawah). Sisa: **ukur RAM 9d-2** dengan `measure.ps1` (build `dist`) dan catat di tabel.
-  3. **Langkah 10 lanjutan (notifikasi): desain belum diputuskan.** Data probe 10b ada di bagian "Hasil langkah 10b". Keputusan yang dibutuhkan: (a) opsi pembacaan (baca saat expanded, polling lambat, atau tunda), (b) privasi (default hanya nama aplikasi + judul tanpa isi), (c) bentuk tampilan di pill. Analisis pro-kontra sudah ada di bagian itu; mulai sesi baru dari sana.
+  3. **Langkah 10 lanjutan (notifikasi): desain diputuskan 21 Okt 2026 (disetujui pengguna lewat "lanjut").** Opsi B (baca saat expanded, tanpa event dan tanpa polling), privasi default nama aplikasi + judul tanpa isi (sakelar "tampilkan isi" di menu tray), tampilan berupa lencana jumlah yang beralih antara media dan daftar notifikasi. **10c selesai** (`notif.rs`, `notif_text.rs`). Sisa: **10d** sambungkan ke UI (properti Slint, lencana, sakelar tampilan; judul yang sama dengan nama aplikasi dikosongkan sebelum dedup), **10e** sakelar privasi di menu tray (disimpan di registry seperti autostart), lalu ukur RAM.
   4. Selesai: lisensi (opsi B) dan dokumen repo, commit `b2bdb01`. Sisa: cek lisensi transitif dengan `cargo-deny` atau `cargo-license` sebelum rilis.
   5. Tes `drop-shadow-*` pada software renderer belum dilakukan (dokumentasi menyebut belum didukung).
   6. Belum diuji: judul non-Latin (Jepang, Korea, emoji) di pill, pemutar yang melaporkan judul kosong, monitor kedua dan DPI, game fullscreen eksklusif, rendering emoji di software renderer (relevan untuk notifikasi).
 - **Berkas lokal yang sengaja belum di-commit:** `run-all.ps1`, `measure.ps1`, `cleanup.ps1` di folder proyek (pengukuran; `run-all.ps1` mengubah `Cargo.toml` sementara).
-- **Langkah berikutnya (mulai sesi baru dari sini):** (1) selesai: probe 10b ada di commit `f891c66`; (2) ukur RAM 9d-2; (3) putuskan desain notifikasi (bagian "Hasil langkah 10b"); (4) setelah desain disetujui, tulis kode dalam kelompok kecil seperti biasa. Claude tidak bisa mengompilasi (sandbox bukan Windows, tanpa `cargo`): semua kode lewat `cargo check` pengguna. Kirim **berkas utuh** bila patch gagal (`git apply` pernah menolak patch yang utuh di sandbox karena berkas berubah saat diunduh).
+- **Langkah berikutnya (mulai sesi baru dari sini):** (1) selesai: probe 10b ada di commit `f891c66`; (2) ukur RAM 9d-2; (3) 10d: sambungkan notifikasi ke UI (properti Slint, lencana jumlah, sakelar media/notifikasi); (4) 10e: sakelar privasi di menu tray; ukur RAM setelah 10d dan 10e. Claude tidak bisa mengompilasi (sandbox bukan Windows, tanpa `cargo`): semua kode lewat `cargo check` pengguna. Kirim **berkas utuh** bila patch gagal (`git apply` pernah menolak patch yang utuh di sandbox karena berkas berubah saat diunduh).
 - **Cara kerja:** satu kelompok perubahan kecil, verifikasi dengan checklist, commit memakai pesan yang hanya mengklaim yang sudah dilaporkan, perbarui dokumen ini, baru lanjut. Verifikasi nama feature dan API di dokumentasi sesuai versi crate yang terpasang, jangan menebak (pelajaran dari `get()` vs `join()`).
 - **Peran Claude:** instruktur/analis kritis. Timbang pro-kontra sebelum merekomendasikan, sampaikan ketidaksetujuan bila perlu, dan akui bila data membantah dugaan sebelumnya.
 
@@ -344,7 +344,7 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | 7 | Autostart saat login | Selesai: menu "Autostart: On/Off" berganti, entri `HKCU\...\Run` ditulis dan dihapus dengan benar. Build release dari `%LOCALAPPDATA%\winisland\` berjalan saat login tanpa jendela terminal, ikon tray ada, terdaftar di Startup apps (laporan pengguna). Posisi overlay dan taskbar/Alt+Tab saat login tidak dirinci |
 | 8 | Pengukuran RAM, CPU, ukuran `.exe` lengkap (bagian 2) pada bentuk aplikasi yang sudah baru | Selesai: femtovg dibuang, profil `dist` diterapkan, build `dist` lulus checklist (tray, hover, autostart, quit). `.exe` 7,3 MB, private working set sekitar 2,6 MB, CPU idle 0% |
 | 9 | Kontrol media via SMTC (windows-rs), dipecah: 9a baca judul/artis ke konsol, 9b tampil di overlay, 9c pembaruan otomatis, 9d kontrol (9d-1 ikon status, 9d-2 tombol) | Selesai: 9a, 9b, 9c (event SMTC + worker), 9d-1 (ikon play/pause), 9d-2 (tombol previous, play/pause, next) lolos uji (laporan pengguna). RAM 9d-2 belum diukur |
-| 10 | Notifikasi lewat `UserNotificationListener` pada aplikasi unpackaged | 10a selesai: `Allowed`. 10b selesai: **membaca daftar dan isi berhasil, registrasi `NotificationChanged` gagal** (0x80070490). Desain tampilan dan opsi pembacaan menunggu keputusan |
+| 10 | Notifikasi lewat `UserNotificationListener` pada aplikasi unpackaged | 10a selesai: `Allowed`. 10b selesai: **membaca daftar dan isi berhasil, registrasi `NotificationChanged` gagal** (0x80070490). Desain tampilan dan opsi pembacaan menunggu keputusan **10c selesai:** `notif.rs` (baca daftar, tanpa event) dan `notif_text.rs` (pembersihan, pengurutan, dedup; 13 tes lolos), terhubung ke konsol lewat `debug_run`. Belum ada UI |
 | 11 | Lisensi dan dokumen repo (MIT + atribusi Slint Royalty-free 2.0): `LICENSE`, `README.md`, `CONTRIBUTING.md`, field `license` di `Cargo.toml` | Selesai: commit `b2bdb01` |
 
 ### Status temuan spike
@@ -396,6 +396,9 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 - Slint: `color` adalah properti bawaan `Rectangle` (alias lama `background`), jadi tidak boleh dipakai sebagai nama properti baru (pakai mis. `icon-color`). `Path` di software renderer hanya digambar bila feature `software-renderer-path` aktif (menarik `zeno` dan `lyon_path`); ikon pill digambar dari `Rectangle` (strip vertikal 1 px untuk segitiga) tanpa dependensi tambahan.
 - Slint `TouchArea` bersarang: `has-hover` induk tetap `true` saat kursor di atas `TouchArea` anak (source `i-slint-core` 1.18.1, dan terbukti di uji 9d-2). Letakkan `TouchArea` tombol setelah `@children` supaya berada di atas ikon.
 - Perintah kontrol media dijalankan fire-and-forget (`TryXAsync()` tanpa `join()`); operasi tetap berjalan setelah objeknya di-drop (terbukti di uji 9d-2).
+
+- Langkah 10c: privasi diterapkan di sumber (isi pesan tidak dibaca bila `include_body` salah), bukan hanya disembunyikan di UI. Kunci dedup adalah apa yang ditampilkan: (aplikasi, judul) atau (aplikasi, judul, isi). U+200C dan U+200D (ZWNJ, ZWJ) sengaja dipertahankan saat membersihkan teks; U+200E, U+200F, dan kontrol bidi dibuang. `GetAccessStatus` dicek tiap pembacaan karena bila akses dicabut Windows mengembalikan daftar kosong tanpa error.
+- Alur uji tanpa Windows di sandbox: logika murni dipisah ke berkas tanpa crate `windows` (pola `notif_text.rs`) sehingga bisa diuji di Linux (`apt-get install rustc-1.91 cargo-1.91`; crate `windows` sendiri tidak bisa dikompilasi di Linux, jadi `cargo check` pengguna tetap gerbang untuk kode WinRT).
 
 ### Prosedur langkah 8
 
@@ -681,6 +684,25 @@ Probe di `src/notif_probe.rs` (debug-only) membaca daftar toast aktif dan mencob
 
 **Risiko yang masih terbuka:** perilaku Focus/Do Not Disturb (apakah notifikasi yang ditekan tetap muncul di daftar) belum diuji; notifikasi yang di-update aplikasi yang sama (mis. progres) bisa membuat tampilan berkedip; biaya RAM membaca daftar berulang belum diukur.
 
+### Hasil langkah 10c (21 Okt 2026)
+
+Kode: `src/notif.rs` (pembacaan WinRT, hanya daftar) dan `src/notif_text.rs` (logika murni tanpa API Windows: `clean`, `group`, `age_secs`), menggantikan `notif_probe.rs`. `debug_run` (build debug) membaca tiga kali dan mencetak ringkasan; isi pesan baru dibaca bila variabel lingkungan `WINISLAND_NOTIF_BODY` diset.
+
+Hasil (laporan pengguna, Windows, build debug):
+
+| Pembacaan   | Tanpa isi | Dengan isi |
+| ----------- | --------- | ---------- |
+| #1 (dingin) | 49,2 ms   | 26,8 ms    |
+| #2          | 14,6 ms   | 14,6 ms    |
+| #3          | 12,1 ms   | 12,7 ms    |
+
+- `cargo test`: 13 tes lolos di Windows. Daftar saat uji hanya berisi **1 notifikasi**, jadi pengurutan dan dedup pada data nyata belum teramati (hanya lewat unit test).
+- Mode tanpa isi tidak mencetak isi pesan: terbukti isi tidak dibaca di mode itu.
+- Umur notifikasi bertambah tepat 1 detik per pembacaan, jadi `CreationTime` dan konversi tick berfungsi.
+- Waktu baca adalah waktu dinding untuk 1 notifikasi. Biaya untuk daftar besar (puluhan notifikasi, tiap notifikasi memicu beberapa panggilan lintas proses) dan biaya CPU belum diukur; ini masukan untuk keputusan B+ bila diangkat lagi.
+
+**Temuan desain:** judul notifikasi sering sama dengan nama aplikasi (Antigravity: judul "Antigravity", informasi ada di isi), sedangkan aplikasi lain memakai judul informatif (Hermes, Snipping Tool) atau nama obrolan (WhatsApp). Keputusan: bila judul sama dengan nama aplikasi, tampilkan sekali saja (kosongkan judul sebelum dedup); isi tetap hanya lewat sakelar privasi. Opsi menampilkan isi otomatis untuk aplikasi tertentu ditolak karena privasinya bergantung pada kebetulan nama aplikasi.
+
 ### Riwayat commit
 
 Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
@@ -700,4 +722,9 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 13. `2fbf5a7` feat: show play/pause status icon in the expanded overlay (langkah 9d-1)
 14. `2e20893` feat: add previous, play/pause and next buttons to the expanded overlay (langkah 9d-2)
 
-Hash diambil dari `git log --oneline` pada repo (21 Okt 2026).
+15. `f891c66` feat: probe reading notification contents and test NotificationChanged event (langkah 10b)
+16. `da4b621` docs: repair plan corrupted by unexpanded regex back-references
+17. `____` docs: tick the remaining checklist items and update the stale target table
+18. `____` feat: read, clean and group active toast notifications (langkah 10c)
+
+Hash diambil dari `git log --oneline` pada repo (21 Okt 2026); isi dua hash terakhir setelah push.

@@ -7,7 +7,8 @@
 //!
 //! - `media.rs`: memantau judul dan artis media lewat event SMTC (worker thread).
 //! - `autostart.rs`: mengatur autostart lewat registry (`HKCU\...\Run`).
-//! - `notif_probe.rs`: probe sementara untuk `UserNotificationListener` (hanya build debug).
+//! - `notif.rs` dan `notif_text.rs`: membaca notifikasi toast (daftar, tanpa event) dan
+//!   membersihkan serta mengelompokkannya. Belum tersambung ke UI (langkah 10c).
 //!
 //! Renderer dikunci ke software lewat `BackendSelector` supaya pemakaian RAM tetap kecil.
 
@@ -27,8 +28,11 @@ slint::include_modules!();
 mod autostart;
 mod media;
 
-#[cfg(debug_assertions)]
-mod notif_probe;
+// Belum dipakai di build release sampai tersambung ke UI (langkah 10d).
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
+mod notif;
+#[cfg_attr(not(debug_assertions), allow(dead_code))]
+mod notif_text;
 
 /// Jumlah maksimum percobaan memasang style jendela. Handle jendela baru tersedia
 /// setelah event loop berjalan, jadi pemasangan perlu diulang sampai berhasil.
@@ -221,13 +225,9 @@ fn main() -> Result<(), slint::PlatformError> {
         let _ = slint::quit_event_loop();
     });
 
-    // probe langkah 10 (hanya build debug)
+    // uji langkah 10c (hanya build debug): baca notifikasi dan cetak ke konsol
     #[cfg(debug_assertions)]
-    std::thread::spawn(|| {
-        if let Err(e) = notif_probe::probe() {
-            eprintln!("[notif] FAILED: {e}");
-        }
-    });
+    std::thread::spawn(notif::debug_run);
 
     // pasang style jendela pertama kali, dari dalam event loop (handle jendela baru tersedia di sana)
     let weak = ui.as_weak();
