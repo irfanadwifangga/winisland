@@ -5,7 +5,7 @@
 //! berupa garis tipis yang menempel di tepi atas layar. Saat kursor menghampirinya,
 //! jendela membesar dan pill di dalamnya beranimasi (lihat `ui/main.slint`).
 //!
-//! - `media.rs`: membaca judul dan artis media yang sedang diputar lewat SMTC.
+//! - `media.rs`: memantau judul dan artis media lewat event SMTC (worker thread).
 //! - `autostart.rs`: mengatur autostart lewat registry (`HKCU\...\Run`).
 //! - `notif_probe.rs`: probe sementara untuk `UserNotificationListener` (hanya build debug).
 //!
@@ -13,7 +13,6 @@
 
 use core::ffi::c_void;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -96,33 +95,6 @@ fn place(ui: &MainWindow, w: f32, h: f32) {
     eprintln!("[overlay] place {pw}x{ph}");
 }
 
-/// Penjaga agar hanya satu pembacaan media berjalan pada satu waktu.
-static FETCHING: AtomicBool = AtomicBool::new(false);
-
-/// Baca info media di thread latar, lalu kirim hasilnya ke UI.
-/// Lewati bila pembacaan sebelumnya belum selesai (mencegah tumpukan thread
-/// saat kursor keluar-masuk dengan cepat).
-fn refresh_media(weak: slint::Weak<MainWindow>) {
-    if FETCHING.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    std::thread::spawn(move || {
-        let (title, artist) = match media::read_now_playing() {
-            Ok(Some(m)) => (m.title, m.artist),
-            Ok(None) => ("Nothing playing".to_string(), String::new()),
-            Err(e) => {
-                eprintln!("[media] FAILED: {e}");
-                ("Nothing playing".to_string(), String::new())
-            }
-        };
-        let _ = weak.upgrade_in_event_loop(move |ui| {
-            ui.set_track_title(title.into());
-            ui.set_track_artist(artist.into());
-        });
-        FETCHING.store(false, Ordering::Release);
-    });
-}
-
 /// Memasang style overlay lalu menempatkan jendela dalam keadaan idle.
 /// Bila handle jendela belum tersedia, diulang setiap `RETRY_MS` sampai `MAX_ATTEMPTS`.
 fn try_apply(weak: slint::Weak<MainWindow>, attempt: u32) {
@@ -149,6 +121,22 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.show()?;
 
+    // --- media: langganan event SMTC lewat worker thread
+    // `nudge` meminta worker membaca ulang (dipakai saat hover sebagai jaring pengaman).
+    let nudge = {
+        let weak = ui.as_weak();
+        media::spawn_watcher(move |info| {
+            let (title, artist) = match info {
+                Some(m) => (m.title, m.artist),
+                None => ("Nothing playing".to_string(), String::new()),
+            };
+            let _ = weak.upgrade_in_event_loop(move |ui| {
+                ui.set_track_title(title.into());
+                ui.set_track_artist(artist.into());
+            });
+        })
+    };
+
     // --- hover expand/collapse
     // Saat expand, jendela membesar dulu baru konten beranimasi. Saat collapse, konten
     // mengecil dulu dan jendela baru mengecil setelah `SHRINK_DELAY_MS`.
@@ -162,7 +150,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 timer.stop();
                 place(&ui, FULL_W, FULL_H); // jendela membesar dulu
                 ui.set_expanded(true); // baru konten beranimasi
-                refresh_media(weak.clone()); // baca media di thread latar
+                let _ = nudge.send(true); // minta worker membaca ulang (jaring pengaman)
             } else {
                 ui.set_expanded(false); // konten mengecil dulu
                 let weak2 = weak.clone();

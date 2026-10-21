@@ -634,5 +634,6 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 8. `936a38c` feat: show now-playing title and artist in the expanded overlay (langkah 9b)
 9. `b2bdb01` docs: add MIT license, README and CONTRIBUTING; declare license in Cargo.toml
 10. `50d7110` feat: add debug-only probe for UserNotificationListener access
+11. `5b472f2` chore: add doc comments, fix formatting, and update plan with probe result
 
 Hash diambil dari `git log --oneline` pada repo (21 Okt 2026).
