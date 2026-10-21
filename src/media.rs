@@ -12,27 +12,37 @@ use windows::Foundation::TypedEventHandler;
 use windows::Media::Control::{
     CurrentSessionChangedEventArgs, GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as SessionManager,
-    MediaPropertiesChangedEventArgs,
+    GlobalSystemMediaTransportControlsSessionPlaybackStatus as PlaybackStatus,
+    MediaPropertiesChangedEventArgs, PlaybackInfoChangedEventArgs,
 };
 
 /// Jeda penggabungan event beruntun, dalam milidetik. SMTC sering mengirim beberapa
 /// event untuk satu pergantian lagu (kadang dengan judul kosong dulu).
 const DEBOUNCE_MS: u64 = 150;
 
-/// Judul dan artis dari sesi media yang sedang aktif.
+/// Judul, artis, dan status pemutaran dari sesi media yang sedang aktif.
 #[derive(Clone, PartialEq)]
 pub struct NowPlaying {
     pub title: String,
     pub artist: String,
+    /// `true` bila sedang diputar, `false` bila dijeda, berhenti, atau statusnya tidak terbaca.
+    pub playing: bool,
 }
 
-/// Membaca judul dan artis dari satu sesi. Memblokir (`join()`), jadi hanya
-/// boleh dipanggil dari worker thread, bukan thread UI.
+/// Membaca judul, artis, dan status pemutaran dari satu sesi. Memblokir (`join()`),
+/// jadi hanya boleh dipanggil dari worker thread, bukan thread UI.
 fn read_session(session: &Session) -> Result<NowPlaying> {
     let props = session.TryGetMediaPropertiesAsync()?.join()?;
+    // status yang gagal dibaca dianggap tidak sedang diputar
+    let playing = session
+        .GetPlaybackInfo()
+        .and_then(|info| info.PlaybackStatus())
+        .map(|status| status == PlaybackStatus::Playing)
+        .unwrap_or(false);
     Ok(NowPlaying {
         title: props.Title()?.to_string(),
         artist: props.Artist()?.to_string(),
+        playing,
     })
 }
 
@@ -54,7 +64,7 @@ pub fn spawn_watcher(on_change: impl FnMut(Option<NowPlaying>) + Send + 'static)
 }
 
 /// Isi worker. Sinyal bernilai `true` = sesi aktif berganti (pasang ulang listener),
-/// `false` = properti media berubah.
+/// `false` = properti media atau status pemutaran berubah.
 fn run(
     tx: Sender<bool>,
     rx: Receiver<bool>,
@@ -72,36 +82,59 @@ fn run(
         Ok(())
     }))?;
 
-    // sesi yang sedang dipantau beserta token handler-nya (untuk dilepas saat sesi berganti)
-    let mut attached: Option<(Session, i64)> = None;
+    // sesi yang sedang dipantau beserta token handler-nya (untuk dilepas saat sesi berganti):
+    // (sesi, token MediaPropertiesChanged, token PlaybackInfoChanged)
+    let mut attached: Option<(Session, i64, i64)> = None;
     // hasil terakhir yang dikirim ke UI, untuk menghindari kiriman duplikat
     let mut last: Option<Option<NowPlaying>> = None;
     let mut reattach = true;
 
     loop {
         if reattach {
-            if let Some((old, token)) = attached.take() {
+            if let Some((old, props_token, playback_token)) = attached.take() {
                 // error diabaikan: sesi lama bisa saja sudah tidak ada
-                let _ = old.RemoveMediaPropertiesChanged(token);
+                let _ = old.RemoveMediaPropertiesChanged(props_token);
+                let _ = old.RemovePlaybackInfoChanged(playback_token);
             }
             // GetCurrentSession mengembalikan Err bila tidak ada sesi aktif
             if let Ok(session) = manager.GetCurrentSession() {
                 let tx_props = tx.clone();
-                let handler = TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(
-                    move |_, _| {
-                        let _ = tx_props.send(false);
+                let props_handler =
+                    TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(
+                        move |_, _| {
+                            let _ = tx_props.send(false);
+                            Ok(())
+                        },
+                    );
+                let tx_playback = tx.clone();
+                let playback_handler =
+                    TypedEventHandler::<Session, PlaybackInfoChangedEventArgs>::new(move |_, _| {
+                        let _ = tx_playback.send(false);
                         Ok(())
-                    },
-                );
-                match session.MediaPropertiesChanged(&handler) {
-                    Ok(token) => attached = Some((session, token)),
-                    Err(e) => eprintln!("[media] attach FAILED: {e}"),
+                    });
+                match (
+                    session.MediaPropertiesChanged(&props_handler),
+                    session.PlaybackInfoChanged(&playback_handler),
+                ) {
+                    (Ok(props_token), Ok(playback_token)) => {
+                        attached = Some((session, props_token, playback_token));
+                    }
+                    (props, playback) => {
+                        // bila salah satu gagal, lepas yang berhasil supaya tidak bocor
+                        if let Ok(token) = props {
+                            let _ = session.RemoveMediaPropertiesChanged(token);
+                        }
+                        if let Ok(token) = playback {
+                            let _ = session.RemovePlaybackInfoChanged(token);
+                        }
+                        eprintln!("[media] attach FAILED");
+                    }
                 }
             }
         }
 
         let now = match &attached {
-            Some((session, _)) => match read_session(session) {
+            Some((session, _, _)) => match read_session(session) {
                 Ok(np) => Some(np),
                 Err(e) => {
                     eprintln!("[media] read FAILED: {e}");

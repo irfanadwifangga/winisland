@@ -1,3 +1,38 @@
+// Ikon play: segitiga didekati dengan 12 strip vertikal setinggi menurun (tanpa elemen
+// Path, karena Path di software renderer butuh feature tambahan dan menambah dependensi).
+component PlayIcon inherits Rectangle {
+    width: 12px;
+    height: 14px;
+
+    for i in 12: Rectangle {
+        x: i * 1px;
+        width: 1px;
+        height: 14px * (12 - i) / 12;
+        y: (14px - self.height) / 2;
+        background: #b0b0b0;
+    }
+}
+
+// Ikon pause: dua batang vertikal.
+component PauseIcon inherits Rectangle {
+    width: 12px;
+    height: 14px;
+
+    Rectangle {
+        x: 1px;
+        width: 4px;
+        height: parent.height;
+        background: #b0b0b0;
+    }
+
+    Rectangle {
+        x: 7px;
+        width: 4px;
+        height: parent.height;
+        background: #b0b0b0;
+    }
+}
+
 export component MainWindow inherits Window {
     no-frame: true;
     always-on-top: true;
@@ -8,6 +43,10 @@ export component MainWindow inherits Window {
     in-out property <bool> expanded: false;
     in-out property <string> track-title: "";
     in-out property <string> track-artist: "";
+    // true bila ada sesi media aktif; false menyembunyikan ikon status
+    in-out property <bool> has-media: false;
+    // true bila sedang diputar (ikon play), false bila dijeda (ikon pause)
+    in-out property <bool> playing: false;
     callback hover-changed(bool);
 
     property <bool> hovered: area.has-hover;
@@ -51,6 +90,18 @@ export component MainWindow inherits Window {
                     overflow: elide;
                     visible: root.expanded;
                 }
+            }
+
+            // ikon status pemutaran di bawah teks, rata tengah
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: parent.height - self.height - 12px;
+                width: 12px;
+                height: 14px;
+                visible: root.expanded && root.has-media;
+
+                PlayIcon { visible: root.playing; }
+                PauseIcon { visible: !root.playing; }
             }
         }
     }

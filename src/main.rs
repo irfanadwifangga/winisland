@@ -126,13 +126,15 @@ fn main() -> Result<(), slint::PlatformError> {
     let nudge = {
         let weak = ui.as_weak();
         media::spawn_watcher(move |info| {
-            let (title, artist) = match info {
-                Some(m) => (m.title, m.artist),
-                None => ("Nothing playing".to_string(), String::new()),
+            let (title, artist, playing, has_media) = match info {
+                Some(m) => (m.title, m.artist, m.playing, true),
+                None => ("Nothing playing".to_string(), String::new(), false, false),
             };
             let _ = weak.upgrade_in_event_loop(move |ui| {
                 ui.set_track_title(title.into());
                 ui.set_track_artist(artist.into());
+                ui.set_playing(playing);
+                ui.set_has_media(has_media);
             });
         })
     };
