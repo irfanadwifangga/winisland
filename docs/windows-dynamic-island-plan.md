@@ -724,7 +724,7 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 
 15. `f891c66` feat: probe reading notification contents and test NotificationChanged event (langkah 10b)
 16. `da4b621` docs: repair plan corrupted by unexpanded regex back-references
-17. `____` docs: tick the remaining checklist items and update the stale target table
-18. `____` feat: read, clean and group active toast notifications (langkah 10c)
+17. `7c406ae` docs: tick the remaining checklist items and update the stale target table
+18. `25301b7` feat: read, clean and group active toast notifications (langkah 10c)
 
-Hash diambil dari `git log --oneline` pada repo (21 Okt 2026); isi dua hash terakhir setelah push.
+Hash diambil dari `git log --oneline` pada repo (21 Okt 2026).
