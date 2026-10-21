@@ -12,17 +12,17 @@ Dokumen ini dibuat untuk dibawa ke sesi baru. Bagian 0 adalah ringkasan konteks 
 - **Prioritas:** RAM idle terkecil adalah yang utama. Metrik resmi: **private working set**, dengan commit sebagai pembanding. **Tidak ada anggaran keras** (diputuskan 21 Okt 2026: dibuat fleksibel supaya tidak perlu menghitung terus; angka 20-30 MB tidak lagi menjadi gerbang). Private working set tetap dicatat setiap kali fitur baru masuk, sebagai informasi dan pendeteksi lonjakan, bukan syarat lulus. Ukuran `.exe` sekunder dan tanpa target keras.
 - **Arah:** Rust native, Slint 1.18.1, renderer software dikunci lewat kode (`BackendSelector`), femtovg dibuang dari daftar feature, integrasi Windows lewat crate `windows` (windows-rs 0.62.2).
 - **Pengalaman:** pertama kali memakai Rust. Shell: PowerShell. Editor: VS Code. Teks UI berbahasa Inggris, komentar kode berbahasa Indonesia.
-- **Status (21 Okt 2026): langkah 0-9b selesai, langkah 10 probe selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry, dan judul serta artis lagu dari SMTC tampil di overlay (dibaca di thread latar setiap hover, opsi A). Probe `UserNotificationListener` mengembalikan `Allowed` (status 1): aplikasi unpackaged **bisa** mengakses notifikasi tanpa package identity.
-- **Angka terkini (build `dist`):** `.exe` 7,33 MB; private working set idle sekitar 2,9 MB; commit sekitar 3,9 MB; working set total sekitar 25 MB; CPU idle 0%. Perkembangan: baseline langkah 8 (2,55 MB private) menjadi 2,77 setelah SMTC dibaca (9a) menjadi 2,89 setelah teks digambar (9b). Selisih di bawah sekitar 0,2 MB masih dalam derau satu kali ukur.
-- **Keputusan yang sudah diambil:** software renderer (2,3 MB vs 42 MB pada femtovg), femtovg dibuang, `opt-level = "z"`, profil `[profile.dist]` terpisah dari `release` (repo publik), baca media saat hover (opsi A) bukan langganan event.
+- **Status (21 Okt 2026): langkah 0-9 selesai (9a-9d), langkah 10a dan 10b (probe notifikasi) selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry. Media: judul, artis, dan status play/pause dipantau lewat **event SMTC** (satu worker thread, debounce 150 ms, dedup), dengan tiga tombol di pill (previous, play/pause, next). Notifikasi: `GetNotificationsAsync` **bisa membaca** isi notifikasi pada aplikasi unpackaged, tetapi registrasi event `NotificationChanged` **gagal** (`Element not found`, 0x80070490), jadi pola event ala media tidak bisa dipakai untuk notifikasi.
+- **Angka terkini (build `dist`, setelah 9d-1):** `.exe` 7,35 MB; private working set idle 2,93 MB; commit idle 3,98 MB; working set total idle 25,42 MB; CPU idle 0%. Perkembangan private WS: baseline langkah 8 2,55 menjadi 2,77 (9a) menjadi 2,89 (9b) menjadi 2,83 (9c) menjadi 2,93 (9d-1). **9d-2 (tombol) belum diukur** (ditunda pengguna ke akhir sesi). Selisih di bawah sekitar 0,2 MB masih dalam derau satu kali ukur.
+- **Keputusan yang sudah diambil:** software renderer (2,3 MB vs 42 MB pada femtovg), femtovg dibuang, `opt-level = "z"`, profil `[profile.dist]` terpisah dari `release` (repo publik). **Dibalik di 9c (21 Okt 2026):** media dibaca lewat langganan event SMTC (worker thread permanen), bukan saat hover, karena teks tidak berubah saat lagu berganti selama pill expanded. Hover tetap mengirim `refresh()` ke worker sebagai jaring pengaman bila event terlewat. Biaya RAM terbukti dalam derau.
 - **Keputusan dan pekerjaan terbuka:**
-  1. Selesai (21 Okt 2026): tidak ada anggaran RAM keras, tetap dicatat sebagai informasi.
-  2. 9c (pembaruan otomatis lewat event; hanya bila jeda teks saat hover mengganggu) dan 9d (tombol play/pause, next, prev).
-  3. ~~Langkah 10: cek `UserNotificationListener` pada aplikasi unpackaged.~~ **Selesai (21 Okt 2026).** Probe mengembalikan `UserNotificationListenerAccessStatus(1)` = `Allowed`. Aplikasi unpackaged bisa mengakses notifikasi tanpa package identity. Dugaan sebelumnya (butuh identity) **dibantah data**. Langkah selanjutnya: membaca daftar notifikasi aktif.
-  4. Lisensi diputuskan (21 Okt 2026): opsi B, kode sendiri MIT dan Slint lewat Royalty-free 2.0 dengan badge di README. Berkas `LICENSE`, `README.md`, `CONTRIBUTING.md` dan perubahan `Cargo.toml` sudah disiapkan; tinggal dimasukkan ke repo dan di-commit.
+  1. Selesai: tidak ada anggaran RAM keras, tetap dicatat sebagai informasi.
+  2. Selesai: 9c dan 9d (lihat bagian "Hasil langkah 9c-9d" di bawah). Sisa: **ukur RAM 9d-2** dengan `measure.ps1` (build `dist`) dan catat di tabel.
+  3. **Langkah 10 lanjutan (notifikasi): desain belum diputuskan.** Data probe 10b ada di bagian "Hasil langkah 10b". Keputusan yang dibutuhkan: (a) opsi pembacaan (baca saat expanded, polling lambat, atau tunda), (b) privasi (default hanya nama aplikasi + judul tanpa isi), (c) bentuk tampilan di pill. Analisis pro-kontra sudah ada di bagian itu; mulai sesi baru dari sana.
+  4. Selesai: lisensi (opsi B) dan dokumen repo, commit `b2bdb01`. Sisa: cek lisensi transitif dengan `cargo-deny` atau `cargo-license` sebelum rilis.
   5. Tes `drop-shadow-*` pada software renderer belum dilakukan (dokumentasi menyebut belum didukung).
-  6. Belum diuji: tanpa media dan beberapa pemutar sekaligus, judul non-Latin (Jepang, Korea, emoji), pemutar yang melaporkan judul kosong, monitor kedua dan DPI, game fullscreen eksklusif.
-- **Berkas lokal yang sengaja belum di-commit:** `run-all.ps1`, `measure.ps1`, `cleanup.ps1` di folder proyek (pengukuran; `run-all.ps1` mengubah `Cargo.toml` sementara).
+  6. Belum diuji: judul non-Latin (Jepang, Korea, emoji) di pill, pemutar yang melaporkan judul kosong, monitor kedua dan DPI, game fullscreen eksklusif, rendering emoji di software renderer (relevan untuk notifikasi).
+\1- **Langkah berikutnya (mulai sesi baru dari sini):** (1) pastikan probe 10b dan dokumen ini sudah di-commit dan di-push; (2) ukur RAM 9d-2; (3) putuskan desain notifikasi (bagian \"Hasil langkah 10b\"); (4) setelah desain disetujui, tulis kode dalam kelompok kecil seperti biasa. Claude tidak bisa mengompilasi (sandbox bukan Windows, tanpa `cargo`): semua kode lewat `cargo check` pengguna. Kirim **berkas utuh** bila patch gagal (`git apply` pernah menolak patch yang utuh di sandbox karena berkas berubah saat diunduh).
 - **Cara kerja:** satu kelompok perubahan kecil, verifikasi dengan checklist, commit memakai pesan yang hanya mengklaim yang sudah dilaporkan, perbarui dokumen ini, baru lanjut. Verifikasi nama feature dan API di dokumentasi sesuai versi crate yang terpasang, jangan menebak (pelajaran dari `get()` vs `join()`).
 - **Peran Claude:** instruktur/analis kritis. Timbang pro-kontra sebelum merekomendasikan, sampaikan ketidaksetujuan bila perlu, dan akui bila data membantah dugaan sebelumnya.
 
@@ -342,8 +342,8 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | 6 | Ikon tray (Show / Hide, Quit), jendela tidak keluar dari taskbar | Selesai: tray bawaan Slint berjalan baik (laporan pengguna). Setelah hide lalu show, style jendela dipasang ulang lewat `try_apply`. RAM idle sekitar 3 MB setelah tray, ukuran `.exe` belum dilaporkan |
 | 7 | Autostart saat login | Selesai: menu "Autostart: On/Off" berganti, entri `HKCU\...\Run` ditulis dan dihapus dengan benar. Build release dari `%LOCALAPPDATA%\winisland\` berjalan saat login tanpa jendela terminal, ikon tray ada, terdaftar di Startup apps (laporan pengguna). Posisi overlay dan taskbar/Alt+Tab saat login tidak dirinci |
 | 8 | Pengukuran RAM, CPU, ukuran `.exe` lengkap (bagian 2) pada bentuk aplikasi yang sudah baru | Selesai: femtovg dibuang, profil `dist` diterapkan, build `dist` lulus checklist (tray, hover, autostart, quit). `.exe` 7,3 MB, private working set sekitar 2,6 MB, CPU idle 0% |
-| 9 | Kontrol media via SMTC (windows-rs), dipecah: 9a baca judul/artis ke konsol, 9b tampil di overlay, 9c pembaruan otomatis, 9d tombol kontrol | Berjalan: **9a dan 9b selesai**. Aplikasi unpackaged bisa membaca sesi SMTC. Judul dan artis tampil di pill (satu baris, elipsis), dibaca di thread latar saat hover. 9c dan 9d menunggu |
-| 10 | Cek `UserNotificationListener` pada aplikasi unpackaged | Selesai: probe mengembalikan `Allowed` (status 1). Aplikasi unpackaged bisa mengakses notifikasi tanpa package identity. Dugaan sebelumnya (butuh identity) dibantah data. Opsi A/B/C tidak perlu dipilih |
+| 9 | Kontrol media via SMTC (windows-rs), dipecah: 9a baca judul/artis ke konsol, 9b tampil di overlay, 9c pembaruan otomatis, 9d kontrol (9d-1 ikon status, 9d-2 tombol) | Selesai: 9a, 9b, 9c (event SMTC + worker), 9d-1 (ikon play/pause), 9d-2 (tombol previous, play/pause, next) lolos uji (laporan pengguna). RAM 9d-2 belum diukur |
+| 10 | Notifikasi lewat `UserNotificationListener` pada aplikasi unpackaged | 10a selesai: `Allowed`. 10b selesai: **membaca daftar dan isi berhasil, registrasi `NotificationChanged` gagal** (0x80070490). Desain tampilan dan opsi pembacaan menunggu keputusan |
 | 11 | Lisensi dan dokumen repo (MIT + atribusi Slint Royalty-free 2.0): `LICENSE`, `README.md`, `CONTRIBUTING.md`, field `license` di `Cargo.toml` | Selesai: commit `b2bdb01` |
 
 ### Status temuan spike
@@ -360,7 +360,9 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | Autostart saat login | **Lolos** (build release, lokasi tetap) | Tanpa terminal, ikon tray ada, terdaftar di Startup apps. Batasan yang diketahui: jika dimatikan dari Settings > Apps > Startup, menu tetap menampilkan "On" (jalur `StartupApproved` tidak dibaca) |
 | Animasi halus, RAM, CPU | RAM dan CPU baseline terukur (langkah 4). Animasi dinilai mulus di software renderer (laporan pengguna) | Pengukuran lengkap tetap di langkah 8 |
 | SMTC pada aplikasi unpackaged | **Lolos** (9a) | Tanpa error akses atau inisialisasi COM, `join()` di thread latar langsung bekerja. Pembacaan sesi aktif dikonfirmasi dengan video browser |
-| UserNotificationListener pada aplikasi unpackaged | **Lolos** (10) | `RequestAccessAsync` mengembalikan `Allowed` (status 1) dari thread latar. Package identity **tidak dibutuhkan**. Dugaan sebelumnya dibantah data |
+\1| Membaca isi notifikasi (10b) | **Lolos** | `GetNotificationsAsync(Toast)` mengembalikan 27 notifikasi aktif lengkap dengan nama aplikasi dan teks (judul + isi) tanpa package identity |
+| Event `NotificationChanged` (10b) | **Gagal** | Registrasi mengembalikan `Element not found` (0x80070490) pada aplikasi unpackaged. Penyebab pastinya tidak dinyatakan oleh pesan error; dugaan kuat: butuh package identity (belum dikonfirmasi) |
+| Event SMTC dan kontrol media (9c, 9d) | **Lolos** | Event `MediaPropertiesChanged`, `PlaybackInfoChanged`, `CurrentSessionChanged` menembak pada aplikasi unpackaged; `TryTogglePlayPauseAsync` dan skip bekerja tanpa `join()` |
 
 ### Perubahan dependensi sejauh ini
 
@@ -372,7 +374,9 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 - `winreg` (langkah 7): autostart lewat kunci registry `HKCU\...\Run`, kode di `src/autostart.rs`
 - Langkah 8: `slint` memakai `default-features = false` dengan feature `compat-1-18`, `std`, `backend-winit`, `renderer-software`, `system-tray`, `raw-window-handle-06`, `accessibility` (femtovg dibuang). `[profile.dist]` ditambahkan; `release` tetap standar. Femtovg bisa ditambahkan lagi lewat feature `renderer-femtovg` bila nanti terbukti perlu.
 
-### Catatan implementasi (supaya tidak mengulang kesalahan)
+- Langkah 10b: `windows` ditambah feature `ApplicationModel` dan `Foundation_Collections` (dibutuhkan `GetNotificationsAsync`, yang mengembalikan `IVectorView`, dan `AppInfo`). Dipakai hanya oleh probe (build debug).
+
+\1
 
 - Handle jendela baru tersedia setelah event loop berjalan. Style `WS_EX_TOOLWINDOW` dan `WS_EX_NOACTIVATE` dipasang lewat timer di dalam event loop dengan percobaan ulang terbatas (`try_apply`), dan dipasang ulang setiap kali jendela di-`show()`.
 - Ukuran dan posisi jendela diatur dari Rust (`place`, dalam piksel logis lalu dikonversi ke fisik). Jendela membesar dulu sebelum animasi expand dan mengecil 280 ms setelah collapse.
@@ -384,7 +388,14 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 - Build debug adalah aplikasi konsol (`windows_subsystem` hanya berlaku di release), jadi autostart dari build debug membuka jendela terminal. Aktifkan autostart hanya dari build release di lokasi tetap. Exe yang sedang berjalan terkunci, jadi `cargo build` gagal bila proses masih hidup (Quit dulu).
 - Cara pasang untuk pemakaian harian: `cargo build --profile dist`, salin `target\dist\winisland.exe` ke `%LOCALAPPDATA%\winisland\`, jalankan dari sana, lalu aktifkan Autostart lewat menu. Quit dulu sebelum menyalin versi baru.
 
-### Prosedur langkah 8
+- **API windows-rs 0.62.2 (diverifikasi dari source crate, bukan dokumentasi C#):** closure `TypedEventHandler::new` menerima `windows_core::Ref<T>` (pakai `.as_ref()`), bukan `&Option<T>`, dan harus `Fn + Send + 'static`. Token event bertipe `i64` (`Remove*Changed(token: i64)`). Tulis tipe generik eksplisit (`TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new`) supaya inferensi tidak ambigu.
+- Handler event WinRT hanya mengirim sinyal ke channel; semua pembacaan dan perintah dijalankan di satu worker thread (`media.rs`). Hindari `join()` di dalam callback WinRT (race antar-event, urutan selesai tidak terjamin). Jangan pakai `std::thread::park()` untuk menjaga thread hidup: `park` boleh kembali tanpa `unpark`, sehingga listener ikut di-drop diam-diam.
+- `slint::Weak::upgrade_in_event_loop` aman dipanggil dari thread mana pun (termasuk worker); tidak perlu `invoke_from_event_loop`.
+- Slint: `color` adalah properti bawaan `Rectangle` (alias lama `background`), jadi tidak boleh dipakai sebagai nama properti baru (pakai mis. `icon-color`). `Path` di software renderer hanya digambar bila feature `software-renderer-path` aktif (menarik `zeno` dan `lyon_path`); ikon pill digambar dari `Rectangle` (strip vertikal 1 px untuk segitiga) tanpa dependensi tambahan.
+- Slint `TouchArea` bersarang: `has-hover` induk tetap `true` saat kursor di atas `TouchArea` anak (source `i-slint-core` 1.18.1, dan terbukti di uji 9d-2). Letakkan `TouchArea` tombol setelah `@children` supaya berada di atas ikon.
+- Perintah kontrol media dijalankan fire-and-forget (`TryXAsync()` tanpa `join()`); operasi tetap berjalan setelah objeknya di-drop (terbukti di uji 9d-2).
+
+\1
 
 **Feature Slint 1.18.1 yang terverifikasi** (halaman `docs.slint.dev/latest/docs/rust/slint/docs/cargo_features/`):
 
@@ -620,6 +631,50 @@ Catatan: pesan commit `50d7110` masih memuat placeholder di baris verified. Tida
 
 Langkah selanjutnya: membaca daftar notifikasi aktif lewat `GetNotificationsAsync`, menampilkan di overlay.
 
+### Hasil langkah 9c-9d (21 Okt 2026)
+
+**Arsitektur akhir (`src/media.rs`).** Satu worker thread permanen (`spawn_watcher`) menunggu `Signal` lewat `recv()` (CPU 0% saat idle). Handler `CurrentSessionChanged`, `MediaPropertiesChanged`, dan `PlaybackInfoChanged` hanya mengirim sinyal. Worker membaca berurutan, menggabungkan sinyal susulan selama 150 ms (debounce), mengirim ke UI hanya bila hasil berbeda dari kiriman terakhir (dedup), dan melepas listener sesi lama (`RemoveMediaPropertiesChanged` / `RemovePlaybackInfoChanged`, token `i64`) saat sesi berganti. `MediaHandle` (clone-able) menyediakan `refresh()` (dipanggil saat hover), `toggle_play_pause()`, `skip_next()`, `skip_previous()`; perintah dijalankan segera tanpa menunggu debounce dan tanpa `join()`.
+
+**UI (`ui/main.slint`).** Pill expanded 360x116 (jendela 360x124, `FULL_H = 124`). Baris tiga tombol bulat 30 px di bawah teks, hanya ada bila ada sesi media. Tombol tengah menampilkan aksi berikutnya (pause saat diputar, play saat dijeda). Ikon dari `Rectangle`.
+
+| Titik | `.exe` MB | Private WS idle | Commit idle | WS total idle | CPU idle |
+| --- | --- | --- | --- | --- | --- |
+| Setelah 9b | 7,33 | 2,89 | 3,88 | 25,13 | 0% |
+| Setelah 9c (event + worker) | 7,34 | 2,83 | 3,93 | 25,01 | 0% |
+| Setelah 9d-1 (ikon status) | 7,35 | 2,93 | 3,98 | 25,42 | 0% |
+| Setelah 9d-2 (tombol) | belum diukur | | | | |
+
+- Dugaan bahwa thread permanen dan langganan event menaikkan RAM **dibantah data** (9c: private WS turun 0,06 MB, dalam derau). CPU hover 0,172 dtk-CPU (9c) dan 0,109 (9d-1).
+- Uji fungsional: 9c lulus (ganti lagu, pindah pemutar, tanpa media, skip cepat), 9d-1 lolos semua, 9d-2 lolos semua (pill tidak collapse di atas tombol, klik tidak mencuri fokus, ikon ikut berganti, previous/next/play-pause bekerja, klik beruntun cepat aman, tata letak muat). Semuanya laporan pengguna.
+- Commit: `69f178f` (9c), `2fbf5a7` (9d-1), `2e20893` (9d-2).
+
+### Hasil langkah 10b (21 Okt 2026)
+
+Probe di `src/notif_probe.rs` (debug-only) membaca daftar toast aktif dan mencoba mendaftarkan `NotificationChanged`. Ringkasan keluaran konsol:
+
+- `GetNotificationsAsync(Toast)`: **27 notifikasi** terbaca, masing-masing dengan id, nama aplikasi (`AppInfo().DisplayInfo().DisplayName()`), dan teks (`Visual().GetBinding(ToastGeneric).GetTextElements()`), tanpa error.
+- Setelah daftar awal, probe berhenti dengan `FAILED: Element not found. (0x80070490)`. Baris `NotificationChanged registered` tidak pernah tercetak, sehingga kegagalan ada pada **registrasi event** (kesimpulan dari urutan log). Polling pembanding di probe belum sempat berjalan.
+
+**Pengamatan dari data nyata (penting untuk desain):**
+
+1. Daftar berisi **isi Action Center**, bukan hanya notifikasi baru. Ada banyak entri lama; tanpa event, \"notifikasi baru\" hanya bisa diketahui dengan membandingkan daftar antar-pembacaan.
+2. **Duplikat**: teks yang sama muncul berkali-kali (Antigravity 5x dengan judul sama, NVIDIA App 5x). Perlu dedup/pengelompokan per (aplikasi, teks).
+3. **Urutan daftar tidak menurut id** (id 75225 muncul paling akhir setelah 75265). Jangan mengandalkan urutan; pakai `CreationTime()` untuk menentukan yang terbaru.
+4. **Isi sensitif** terbaca penuh: pesan WhatsApp (nama grup, pengirim, isi), keluaran agen AI (perintah, path, data mesin). Bila ditampilkan di overlay yang selalu di atas semua jendela, isi bisa terlihat orang lain atau saat berbagi layar.
+5. Teks bisa berisi newline, markdown, emoji, dan karakter tak terlihat U+200E (WhatsApp); sebagian dipotong oleh aplikasi pengirimnya. Rendering emoji di software renderer belum diuji.
+
+**Konsekuensi:** pola event (opsi A di analisis) **gugur** untuk build unpackaged ini. Sisa opsi:
+
+| Opsi | Pro | Kontra |
+| --- | --- | --- |
+| **B. Baca saat pill expanded** (lewat `refresh()` yang sudah ada, tanpa event) | Nol biaya idle, arsitektur worker sudah siap, tidak ada polling | Notifikasi yang masuk saat pill collapsed baru terlihat setelah hover; \"baru\" harus ditentukan dengan diff daftar |
+| **B+. B ditambah polling lambat** (mis. 5-10 detik) untuk memunculkan notifikasi baru otomatis | Fitur \"peek\" ala Dynamic Island mungkin dilakukan | Wake-up periodik bertentangan dengan prioritas RAM/CPU idle; biaya harus diukur |
+| **C. Tunda notifikasi** | Nol risiko dan nol RAM | Kehilangan fitur utama aplikasi sejenis |
+
+**Rekomendasi (dari analisis sesi ini, belum diputuskan pengguna):** mulai dari **B**, ukur RAM, dan pertimbangkan B+ hanya bila memang perlu. **Privasi: default hanya nama aplikasi + judul, tanpa isi**, dengan opsi menampilkan isi di menu tray. Tampilan butuh mode sendiri di pill (pill 116 px sudah terisi teks dan tombol media).
+
+**Risiko yang masih terbuka:** perilaku Focus/Do Not Disturb (apakah notifikasi yang ditekan tetap muncul di daftar) belum diuji; notifikasi yang di-update aplikasi yang sama (mis. progres) bisa membuat tampilan berkedip; biaya RAM membaca daftar berulang belum diukur.
+
 ### Riwayat commit
 
 Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
@@ -635,5 +690,8 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 9. `b2bdb01` docs: add MIT license, README and CONTRIBUTING; declare license in Cargo.toml
 10. `50d7110` feat: add debug-only probe for UserNotificationListener access
 11. `5b472f2` chore: add doc comments, fix formatting, and update plan with probe result
+12. `69f178f` feat: update now-playing text automatically via SMTC events (langkah 9c)
+13. `2fbf5a7` feat: show play/pause status icon in the expanded overlay (langkah 9d-1)
+14. `2e20893` feat: add previous, play/pause and next buttons to the expanded overlay (langkah 9d-2)
 
 Hash diambil dari `git log --oneline` pada repo (21 Okt 2026).
