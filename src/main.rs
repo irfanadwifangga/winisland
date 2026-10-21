@@ -14,6 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 slint::include_modules!();
 mod autostart;
+mod media;
 
 const MAX_ATTEMPTS: u32 = 20;
 const RETRY_MS: u64 = 50;
@@ -81,6 +82,13 @@ fn main() -> Result<(), slint::PlatformError> {
     .backend_name("winit".into())
     .renderer_name("software".into())
     .select()?;
+
+    // 9a: uji baca SMTC di thread latar (hasil hanya dicetak ke konsol)
+    std::thread::spawn(|| match media::read_now_playing() {
+        Ok(Some(m)) => eprintln!("[media] sedang diputar: {} - {}", m.artist, m.title),
+        Ok(None) => eprintln!("[media] tidak ada media yang diputar"),
+        Err(e) => eprintln!("[media] GAGAL: {e}"),
+    });
     
     let ui = MainWindow::new()?;
     ui.show()?;
