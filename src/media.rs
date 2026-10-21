@@ -3,13 +3,14 @@
 use windows::core::Result;
 use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as SessionManager;
 
+/// Judul dan artis dari sesi media yang sedang aktif.
 pub struct NowPlaying {
     pub title: String,
     pub artist: String,
 }
 
-/// Memanggil API async secara blocking. JANGAN panggil dari thread UI.
-/// Mengembalikan Ok(None) bila tidak ada sesi media aktif.
+/// Memanggil API async secara blocking (`join()`). JANGAN panggil dari thread UI.
+/// Mengembalikan `Ok(None)` bila tidak ada sesi media aktif.
 pub fn read_now_playing() -> Result<Option<NowPlaying>> {
     let manager = SessionManager::RequestAsync()?.join()?;
 
@@ -17,7 +18,7 @@ pub fn read_now_playing() -> Result<Option<NowPlaying>> {
         Ok(s) => s,
         Err(e) => {
             // belum pasti apakah "tidak ada sesi" muncul sebagai Err atau nilai kosong
-            eprintln!("[media] tidak ada sesi aktif: {e}");
+            eprintln!("[media] no active session: {e}");
             return Ok(None);
         }
     };

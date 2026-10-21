@@ -12,13 +12,13 @@ Dokumen ini dibuat untuk dibawa ke sesi baru. Bagian 0 adalah ringkasan konteks 
 - **Prioritas:** RAM idle terkecil adalah yang utama. Metrik resmi: **private working set**, dengan commit sebagai pembanding. **Tidak ada anggaran keras** (diputuskan 21 Okt 2026: dibuat fleksibel supaya tidak perlu menghitung terus; angka 20-30 MB tidak lagi menjadi gerbang). Private working set tetap dicatat setiap kali fitur baru masuk, sebagai informasi dan pendeteksi lonjakan, bukan syarat lulus. Ukuran `.exe` sekunder dan tanpa target keras.
 - **Arah:** Rust native, Slint 1.18.1, renderer software dikunci lewat kode (`BackendSelector`), femtovg dibuang dari daftar feature, integrasi Windows lewat crate `windows` (windows-rs 0.62.2).
 - **Pengalaman:** pertama kali memakai Rust. Shell: PowerShell. Editor: VS Code. Teks UI berbahasa Inggris, komentar kode berbahasa Indonesia.
-- **Status (21 Okt 2026): langkah 0-9b selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry, dan judul serta artis lagu dari SMTC tampil di overlay (dibaca di thread latar setiap hover, opsi A).
+- **Status (21 Okt 2026): langkah 0-9b selesai, langkah 10 probe selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry, dan judul serta artis lagu dari SMTC tampil di overlay (dibaca di thread latar setiap hover, opsi A). Probe `UserNotificationListener` mengembalikan `Allowed` (status 1): aplikasi unpackaged **bisa** mengakses notifikasi tanpa package identity.
 - **Angka terkini (build `dist`):** `.exe` 7,33 MB; private working set idle sekitar 2,9 MB; commit sekitar 3,9 MB; working set total sekitar 25 MB; CPU idle 0%. Perkembangan: baseline langkah 8 (2,55 MB private) menjadi 2,77 setelah SMTC dibaca (9a) menjadi 2,89 setelah teks digambar (9b). Selisih di bawah sekitar 0,2 MB masih dalam derau satu kali ukur.
 - **Keputusan yang sudah diambil:** software renderer (2,3 MB vs 42 MB pada femtovg), femtovg dibuang, `opt-level = "z"`, profil `[profile.dist]` terpisah dari `release` (repo publik), baca media saat hover (opsi A) bukan langganan event.
 - **Keputusan dan pekerjaan terbuka:**
   1. Selesai (21 Okt 2026): tidak ada anggaran RAM keras, tetap dicatat sebagai informasi.
   2. 9c (pembaruan otomatis lewat event; hanya bila jeda teks saat hover mengganggu) dan 9d (tombol play/pause, next, prev).
-  3. Langkah 10: cek `UserNotificationListener` pada aplikasi unpackaged. Riset dokumen sudah dilakukan (kuat dugaan butuh package identity); tinggal menjalankan probe dan memutuskan opsi A/B/C di bagian "Sesi lanjutan".
+  3. ~~Langkah 10: cek `UserNotificationListener` pada aplikasi unpackaged.~~ **Selesai (21 Okt 2026).** Probe mengembalikan `UserNotificationListenerAccessStatus(1)` = `Allowed`. Aplikasi unpackaged bisa mengakses notifikasi tanpa package identity. Dugaan sebelumnya (butuh identity) **dibantah data**. Langkah selanjutnya: membaca daftar notifikasi aktif.
   4. Lisensi diputuskan (21 Okt 2026): opsi B, kode sendiri MIT dan Slint lewat Royalty-free 2.0 dengan badge di README. Berkas `LICENSE`, `README.md`, `CONTRIBUTING.md` dan perubahan `Cargo.toml` sudah disiapkan; tinggal dimasukkan ke repo dan di-commit.
   5. Tes `drop-shadow-*` pada software renderer belum dilakukan (dokumentasi menyebut belum didukung).
   6. Belum diuji: tanpa media dan beberapa pemutar sekaligus, judul non-Latin (Jepang, Korea, emoji), pemutar yang melaporkan judul kosong, monitor kedua dan DPI, game fullscreen eksklusif.
@@ -249,7 +249,7 @@ cargo add windows --features "Media_Control,Foundation"
 
 **Ditunda:**
 
-- Notifikasi (menunggu hasil cek package identity)
+- Notifikasi (akses terkonfirmasi `Allowed` pada langkah 10; implementasi bisa dimulai)
 - Clipboard history, file tray, shortcut, widget cuaca/baterai/timer
 
 Prinsip: satu fitur pembeda yang benar-benar kamu pakai sehari-hari, bukan menyalin semua fitur kompetitor.
@@ -277,7 +277,7 @@ Prinsip: satu fitur pembeda yang benar-benar kamu pakai sehari-hari, bukan menya
 1. **Mandek karena terlalu lama membangun fondasi.** Ini pertama kali kamu memakai Rust. Jaga MVP sangat kecil, dan rayakan spike yang selesai.
 2. **Angka RAM belum terukur.** Semua perkiraan di percakapan sebelumnya hanya estimasi, bukan benchmark.
 3. **Transparansi, no-frame, always-on-top, click-through di Slint belum diverifikasi** untuk kebutuhan ini. Itulah gunanya spike.
-4. **Notifikasi** mungkin butuh package identity (lihat bagian 3).
+4. ~~**Notifikasi** mungkin butuh package identity (lihat bagian 3).~~ **Teratasi (langkah 10):** akses `Allowed` tanpa identity.
 5. **Janji "lebih ringan" butuh bukti.** Kalau hasil ukur tidak mendukung, ubah keputusan. Jangan membela pilihan awal.
 
 ---
@@ -343,8 +343,8 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | 7 | Autostart saat login | Selesai: menu "Autostart: On/Off" berganti, entri `HKCU\...\Run` ditulis dan dihapus dengan benar. Build release dari `%LOCALAPPDATA%\winisland\` berjalan saat login tanpa jendela terminal, ikon tray ada, terdaftar di Startup apps (laporan pengguna). Posisi overlay dan taskbar/Alt+Tab saat login tidak dirinci |
 | 8 | Pengukuran RAM, CPU, ukuran `.exe` lengkap (bagian 2) pada bentuk aplikasi yang sudah baru | Selesai: femtovg dibuang, profil `dist` diterapkan, build `dist` lulus checklist (tray, hover, autostart, quit). `.exe` 7,3 MB, private working set sekitar 2,6 MB, CPU idle 0% |
 | 9 | Kontrol media via SMTC (windows-rs), dipecah: 9a baca judul/artis ke konsol, 9b tampil di overlay, 9c pembaruan otomatis, 9d tombol kontrol | Berjalan: **9a dan 9b selesai**. Aplikasi unpackaged bisa membaca sesi SMTC. Judul dan artis tampil di pill (satu baris, elipsis), dibaca di thread latar saat hover. 9c dan 9d menunggu |
-| 10 | Cek `UserNotificationListener` pada aplikasi unpackaged | Riset dokumen selesai: kuat dugaan butuh package identity, belum terbukti. Probe debug-only disiapkan, belum dijalankan (lihat bagian "Sesi lanjutan") |
-| 11 | Lisensi dan dokumen repo (MIT + atribusi Slint Royalty-free 2.0): `LICENSE`, `README.md`, `CONTRIBUTING.md`, field `license` di `Cargo.toml` | Berkas disiapkan, menunggu dimasukkan ke repo dan di-commit |
+| 10 | Cek `UserNotificationListener` pada aplikasi unpackaged | Selesai: probe mengembalikan `Allowed` (status 1). Aplikasi unpackaged bisa mengakses notifikasi tanpa package identity. Dugaan sebelumnya (butuh identity) dibantah data. Opsi A/B/C tidak perlu dipilih |
+| 11 | Lisensi dan dokumen repo (MIT + atribusi Slint Royalty-free 2.0): `LICENSE`, `README.md`, `CONTRIBUTING.md`, field `license` di `Cargo.toml` | Selesai: commit `b2bdb01` |
 
 ### Status temuan spike
 
@@ -360,6 +360,7 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | Autostart saat login | **Lolos** (build release, lokasi tetap) | Tanpa terminal, ikon tray ada, terdaftar di Startup apps. Batasan yang diketahui: jika dimatikan dari Settings > Apps > Startup, menu tetap menampilkan "On" (jalur `StartupApproved` tidak dibaca) |
 | Animasi halus, RAM, CPU | RAM dan CPU baseline terukur (langkah 4). Animasi dinilai mulus di software renderer (laporan pengguna) | Pengukuran lengkap tetap di langkah 8 |
 | SMTC pada aplikasi unpackaged | **Lolos** (9a) | Tanpa error akses atau inisialisasi COM, `join()` di thread latar langsung bekerja. Pembacaan sesi aktif dikonfirmasi dengan video browser |
+| UserNotificationListener pada aplikasi unpackaged | **Lolos** (10) | `RequestAccessAsync` mengembalikan `Allowed` (status 1) dari thread latar. Package identity **tidak dibutuhkan**. Dugaan sebelumnya dibantah data |
 
 ### Perubahan dependensi sejauh ini
 
@@ -607,7 +608,17 @@ Rekomendasi sementara: **B**, dengan syarat teks Royalty-free 2.0 dibaca utuh da
 
 **Berkas yang disiapkan** (folder `repo-docs/`): `LICENSE` (MIT), `README.md` (fitur, status, batasan, build, bagian lisensi dengan badge Slint), `CONTRIBUTING.md` (aturan proyek). Perubahan `Cargo.toml` di bagian `[package]`: `description`, `license = "MIT"`, `repository`, dan `publish = false` (opsional, mencegah terbit tidak sengaja ke crates.io).
 
-**Langkah 10.** Remote belum punya commit langkah 10 (commit terakhir `936a38c`). Kode probe ada di bagian "Prosedur langkah 10" di atas; menunggu hasil `[notif]` dari pengguna.
+**Langkah 10.** Probe di commit `50d7110` dijalankan (21 Okt 2026). Hasil:
+
+```
+[notif] status akses: UserNotificationListenerAccessStatus(1)
+```
+
+Status `1` = `Allowed`. **Aplikasi unpackaged bisa mengakses `UserNotificationListener` tanpa package identity.** Dugaan sebelumnya (butuh identity) **dibantah data**. Opsi A/B/C (tunda / sparse package / MSIX) tidak perlu dipilih.
+
+Catatan: pesan commit `50d7110` masih memuat placeholder di baris verified. Tidak di-force-push; hasil sebenarnya dicatat di commit dan dokumen ini.
+
+Langkah selanjutnya: membaca daftar notifikasi aktif lewat `GetNotificationsAsync`, menampilkan di overlay.
 
 ### Riwayat commit
 
@@ -621,5 +632,7 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 6. `496cf16` build: drop femtovg and add size-optimized dist profile (langkah 8)
 7. `ab409de` feat: read now-playing title and artist via SMTC (console probe) (langkah 9a)
 8. `936a38c` feat: show now-playing title and artist in the expanded overlay (langkah 9b)
+9. `b2bdb01` docs: add MIT license, README and CONTRIBUTING; declare license in Cargo.toml
+10. `50d7110` feat: add debug-only probe for UserNotificationListener access
 
-Hash diambil dari `git log --oneline` pada repo yang ditarik (21 Okt 2026).
+Hash diambil dari `git log --oneline` pada repo (21 Okt 2026).
