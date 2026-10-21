@@ -42,8 +42,8 @@ const IDLE_W: f32 = 140.0;
 const IDLE_H: f32 = 4.0;
 /// Lebar jendela saat expanded, dalam piksel logis.
 const FULL_W: f32 = 360.0;
-/// Tinggi jendela saat expanded: pill 100 px ditambah celah 8 px dari tepi atas (nilai 8 juga ada di `ui/main.slint`).
-const FULL_H: f32 = 108.0;
+/// Tinggi jendela saat expanded: pill 116 px ditambah celah 8 px dari tepi atas (nilai 8 dan 116 juga ada di `ui/main.slint`).
+const FULL_H: f32 = 124.0;
 /// Jeda sebelum jendela mengecil setelah collapse, dalam milidetik.
 /// Sedikit di atas durasi animasi (250 ms) supaya animasi tidak terpotong.
 const SHRINK_DELAY_MS: u64 = 280;
@@ -122,8 +122,9 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.show()?;
 
     // --- media: langganan event SMTC lewat worker thread
-    // `nudge` meminta worker membaca ulang (dipakai saat hover sebagai jaring pengaman).
-    let nudge = {
+    // `media_ctl` meminta worker membaca ulang (saat hover, sebagai jaring pengaman)
+    // dan mengirim perintah tombol.
+    let media_ctl = {
         let weak = ui.as_weak();
         media::spawn_watcher(move |info| {
             let (title, artist, playing, has_media) = match info {
@@ -139,6 +140,16 @@ fn main() -> Result<(), slint::PlatformError> {
         })
     };
 
+    // --- tombol kontrol media: perintah dikirim ke worker, tidak memblokir UI
+    {
+        let ctl = media_ctl.clone();
+        ui.on_play_pause(move || ctl.toggle_play_pause());
+        let ctl = media_ctl.clone();
+        ui.on_skip_next(move || ctl.skip_next());
+        let ctl = media_ctl.clone();
+        ui.on_skip_previous(move || ctl.skip_previous());
+    }
+
     // --- hover expand/collapse
     // Saat expand, jendela membesar dulu baru konten beranimasi. Saat collapse, konten
     // mengecil dulu dan jendela baru mengecil setelah `SHRINK_DELAY_MS`.
@@ -152,7 +163,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 timer.stop();
                 place(&ui, FULL_W, FULL_H); // jendela membesar dulu
                 ui.set_expanded(true); // baru konten beranimasi
-                let _ = nudge.send(true); // minta worker membaca ulang (jaring pengaman)
+                media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
             } else {
                 ui.set_expanded(false); // konten mengecil dulu
                 let weak2 = weak.clone();

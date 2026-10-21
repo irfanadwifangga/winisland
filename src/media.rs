@@ -3,6 +3,7 @@
 //! Pembaruan berbasis event: handler WinRT hanya mengirim sinyal ke satu worker thread,
 //! dan worker itulah yang membaca datanya. Dengan begitu pembacaan selalu berurutan
 //! (tidak ada race antar-event) dan event beruntun bisa digabung (debounce).
+//! Perintah dari tombol UI (play/pause, next, previous) juga lewat worker yang sama.
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
@@ -19,6 +20,58 @@ use windows::Media::Control::{
 /// Jeda penggabungan event beruntun, dalam milidetik. SMTC sering mengirim beberapa
 /// event untuk satu pergantian lagu (kadang dengan judul kosong dulu).
 const DEBOUNCE_MS: u64 = 150;
+
+/// Pesan ke worker, dari handler WinRT maupun dari UI.
+enum Signal {
+    /// Properti media atau status pemutaran berubah: baca ulang.
+    Changed,
+    /// Sesi aktif berganti, atau diminta UI: pasang ulang listener lalu baca ulang.
+    Reattach,
+    /// Perintah dari tombol UI, dijalankan segera tanpa menunggu debounce.
+    Control(Control),
+}
+
+/// Perintah kontrol pemutaran.
+#[derive(Clone, Copy)]
+enum Control {
+    TogglePlayPause,
+    Next,
+    Previous,
+}
+
+/// Pegangan ke worker media. Murah di-clone; boleh dipakai dari thread UI.
+#[derive(Clone)]
+pub struct MediaHandle {
+    tx: Sender<Signal>,
+}
+
+impl MediaHandle {
+    /// Minta worker membaca ulang sekaligus memasang ulang listener
+    /// (jaring pengaman bila event terlewat).
+    pub fn refresh(&self) {
+        self.send(Signal::Reattach);
+    }
+
+    /// Play bila sedang dijeda, pause bila sedang diputar.
+    pub fn toggle_play_pause(&self) {
+        self.send(Signal::Control(Control::TogglePlayPause));
+    }
+
+    /// Lompat ke lagu berikutnya.
+    pub fn skip_next(&self) {
+        self.send(Signal::Control(Control::Next));
+    }
+
+    /// Kembali ke lagu sebelumnya.
+    pub fn skip_previous(&self) {
+        self.send(Signal::Control(Control::Previous));
+    }
+
+    fn send(&self, signal: Signal) {
+        // error diabaikan: send hanya gagal bila worker sudah berhenti
+        let _ = self.tx.send(signal);
+    }
+}
 
 /// Judul, artis, dan status pemutaran dari sesi media yang sedang aktif.
 #[derive(Clone, PartialEq)]
@@ -50,24 +103,39 @@ fn read_session(session: &Session) -> Result<NowPlaying> {
 /// worker thread setiap kali hasil baca berbeda dari yang terakhir dikirim
 /// (`None` berarti tidak ada sesi aktif).
 ///
-/// Mengembalikan `Sender` untuk meminta worker membaca ulang: kirim `true` untuk
-/// membaca ulang sekaligus memasang ulang listener (jaring pengaman bila event terlewat).
-pub fn spawn_watcher(on_change: impl FnMut(Option<NowPlaying>) + Send + 'static) -> Sender<bool> {
-    let (tx, rx) = channel::<bool>();
-    let tx_out = tx.clone();
+/// Mengembalikan `MediaHandle` untuk meminta pembacaan ulang dan mengirim perintah
+/// kontrol pemutaran ke worker.
+pub fn spawn_watcher(on_change: impl FnMut(Option<NowPlaying>) + Send + 'static) -> MediaHandle {
+    let (tx, rx) = channel::<Signal>();
+    let handle = MediaHandle { tx: tx.clone() };
     std::thread::spawn(move || {
         if let Err(e) = run(tx, rx, on_change) {
             eprintln!("[media] watcher FAILED: {e}");
         }
     });
-    tx_out
+    handle
 }
 
-/// Isi worker. Sinyal bernilai `true` = sesi aktif berganti (pasang ulang listener),
-/// `false` = properti media atau status pemutaran berubah.
+/// Menjalankan satu perintah kontrol pada sesi aktif (tidak melakukan apa pun bila tidak
+/// ada sesi). Operasi async sengaja tidak di-`join()`: pemutar yang lambat tidak boleh
+/// membekukan worker. Hasilnya terlihat lewat event `PlaybackInfoChanged`.
+fn run_control(session: Option<&Session>, control: Control) {
+    let Some(session) = session else { return };
+    let started = match control {
+        Control::TogglePlayPause => session.TryTogglePlayPauseAsync().map(drop),
+        Control::Next => session.TrySkipNextAsync().map(drop),
+        Control::Previous => session.TrySkipPreviousAsync().map(drop),
+    };
+    if let Err(e) = started {
+        eprintln!("[media] control FAILED: {e}");
+    }
+}
+
+/// Isi worker. Handler WinRT hanya mengirim `Signal`; semua pembacaan dan perintah
+/// dijalankan di sini, berurutan.
 fn run(
-    tx: Sender<bool>,
-    rx: Receiver<bool>,
+    tx: Sender<Signal>,
+    rx: Receiver<Signal>,
     mut on_change: impl FnMut(Option<NowPlaying>),
 ) -> Result<()> {
     // `manager` harus tetap hidup selama loop; bila di-drop, handler ikut berhenti
@@ -78,7 +146,7 @@ fn run(
         SessionManager,
         CurrentSessionChangedEventArgs,
     >::new(move |_, _| {
-        let _ = tx_session.send(true);
+        let _ = tx_session.send(Signal::Reattach);
         Ok(())
     }))?;
 
@@ -102,14 +170,14 @@ fn run(
                 let props_handler =
                     TypedEventHandler::<Session, MediaPropertiesChangedEventArgs>::new(
                         move |_, _| {
-                            let _ = tx_props.send(false);
+                            let _ = tx_props.send(Signal::Changed);
                             Ok(())
                         },
                     );
                 let tx_playback = tx.clone();
                 let playback_handler =
                     TypedEventHandler::<Session, PlaybackInfoChangedEventArgs>::new(move |_, _| {
-                        let _ = tx_playback.send(false);
+                        let _ = tx_playback.send(Signal::Changed);
                         Ok(())
                     });
                 match (
@@ -148,12 +216,24 @@ fn run(
             last = Some(now);
         }
 
-        // tunggu sinyal berikutnya (blocking, tanpa CPU), lalu gabungkan sinyal susulan
-        let Ok(first) = rx.recv() else { return Ok(()) };
-        let mut signal = first;
-        while let Ok(more) = rx.recv_timeout(Duration::from_millis(DEBOUNCE_MS)) {
-            signal |= more;
+        // tunggu sinyal berikutnya (blocking, tanpa CPU). Perintah tombol dijalankan
+        // segera; sinyal lain digabung selama DEBOUNCE_MS supaya event beruntun dibaca sekali.
+        let Ok(mut signal) = rx.recv() else {
+            return Ok(());
+        };
+        reattach = false;
+        loop {
+            match signal {
+                Signal::Changed => {}
+                Signal::Reattach => reattach = true,
+                Signal::Control(control) => {
+                    run_control(attached.as_ref().map(|(session, _, _)| session), control);
+                }
+            }
+            match rx.recv_timeout(Duration::from_millis(DEBOUNCE_MS)) {
+                Ok(next) => signal = next,
+                Err(_) => break,
+            }
         }
-        reattach = signal;
     }
 }

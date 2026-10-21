@@ -1,6 +1,8 @@
-// Ikon play: segitiga didekati dengan 12 strip vertikal setinggi menurun (tanpa elemen
-// Path, karena Path di software renderer butuh feature tambahan dan menambah dependensi).
+// Ikon digambar dari Rectangle (tanpa Path: Path di software renderer butuh feature
+// tambahan dan menambah dependensi). Segitiga didekati dengan strip vertikal 1 px
+// yang tingginya menurun.
 component PlayIcon inherits Rectangle {
+    in property <brush> icon-color: white;
     width: 12px;
     height: 14px;
 
@@ -9,12 +11,13 @@ component PlayIcon inherits Rectangle {
         width: 1px;
         height: 14px * (12 - i) / 12;
         y: (14px - self.height) / 2;
-        background: #b0b0b0;
+        background: root.icon-color;
     }
 }
 
 // Ikon pause: dua batang vertikal.
 component PauseIcon inherits Rectangle {
+    in property <brush> icon-color: white;
     width: 12px;
     height: 14px;
 
@@ -22,14 +25,75 @@ component PauseIcon inherits Rectangle {
         x: 1px;
         width: 4px;
         height: parent.height;
-        background: #b0b0b0;
+        background: root.icon-color;
     }
 
     Rectangle {
         x: 7px;
         width: 4px;
         height: parent.height;
-        background: #b0b0b0;
+        background: root.icon-color;
+    }
+}
+
+// Ikon next: segitiga menghadap kanan dan satu batang di kanannya.
+component NextIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    width: 12px;
+    height: 14px;
+
+    for i in 9: Rectangle {
+        x: i * 1px;
+        width: 1px;
+        height: 14px * (9 - i) / 9;
+        y: (14px - self.height) / 2;
+        background: root.icon-color;
+    }
+
+    Rectangle {
+        x: 10px;
+        width: 2px;
+        height: parent.height;
+        background: root.icon-color;
+    }
+}
+
+// Ikon previous: satu batang di kiri dan segitiga menghadap kiri.
+component PrevIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    width: 12px;
+    height: 14px;
+
+    Rectangle {
+        x: 0px;
+        width: 2px;
+        height: parent.height;
+        background: root.icon-color;
+    }
+
+    for i in 9: Rectangle {
+        x: 3px + i * 1px;
+        width: 1px;
+        height: 14px * (i + 1) / 9;
+        y: (14px - self.height) / 2;
+        background: root.icon-color;
+    }
+}
+
+// Tombol bulat dengan latar saat di-hover. `@children` (ikon) digambar di bawah
+// TouchArea supaya klik selalu sampai ke TouchArea.
+component ControlButton inherits Rectangle {
+    callback clicked();
+
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background: touch.has-hover ? #2a2a2a : transparent;
+
+    @children
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
     }
 }
 
@@ -43,11 +107,14 @@ export component MainWindow inherits Window {
     in-out property <bool> expanded: false;
     in-out property <string> track-title: "";
     in-out property <string> track-artist: "";
-    // true bila ada sesi media aktif; false menyembunyikan ikon status
+    // true bila ada sesi media aktif; false menyembunyikan tombol kontrol
     in-out property <bool> has-media: false;
-    // true bila sedang diputar (ikon play), false bila dijeda (ikon pause)
+    // true bila sedang diputar (tombol menampilkan pause), false bila dijeda (menampilkan play)
     in-out property <bool> playing: false;
     callback hover-changed(bool);
+    callback play-pause();
+    callback skip-next();
+    callback skip-previous();
 
     property <bool> hovered: area.has-hover;
     changed hovered => { root.hover-changed(root.hovered); }
@@ -57,7 +124,7 @@ export component MainWindow inherits Window {
             x: (parent.width - self.width) / 2;
             y: root.expanded ? 8px : 0px;
             width: root.expanded ? 360px : 140px;
-            height: root.expanded ? 100px : 4px;
+            height: root.expanded ? 116px : 4px;
             border-radius: min(self.height / 2, 28px);
             background: black;
             clip: true;
@@ -90,18 +157,51 @@ export component MainWindow inherits Window {
                     overflow: elide;
                     visible: root.expanded;
                 }
-            }
 
-            // ikon status pemutaran di bawah teks, rata tengah
-            Rectangle {
-                x: (parent.width - self.width) / 2;
-                y: parent.height - self.height - 12px;
-                width: 12px;
-                height: 14px;
-                visible: root.expanded && root.has-media;
+                // baris tombol: previous, play/pause (menampilkan aksi berikutnya), next
+                if root.has-media: Rectangle {
+                    height: 30px;
+                    visible: root.expanded;
 
-                PlayIcon { visible: root.playing; }
-                PauseIcon { visible: !root.playing; }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 24px;
+
+                        ControlButton {
+                            clicked => { root.skip-previous(); }
+
+                            PrevIcon {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        ControlButton {
+                            clicked => { root.play-pause(); }
+
+                            PauseIcon {
+                                visible: root.playing;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+
+                            PlayIcon {
+                                visible: !root.playing;
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+
+                        ControlButton {
+                            clicked => { root.skip-next(); }
+
+                            NextIcon {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
