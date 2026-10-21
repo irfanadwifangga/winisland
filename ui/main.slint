@@ -14,13 +14,16 @@ export component MainWindow inherits Window {
     area := TouchArea {
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: 0px;
+            y: root.expanded ? 8px : 0px;
             width: root.expanded ? 360px : 140px;
             height: root.expanded ? 100px : 4px;
             border-radius: min(self.height / 2, 28px);
             background: black;
 
-            animate width, height { duration: 250ms; easing: ease-out; }
+            animate width, height, y {
+                duration: 250ms;
+                easing: ease-out;
+            }
         }
     }
 }

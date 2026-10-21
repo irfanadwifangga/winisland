@@ -20,7 +20,7 @@ const RETRY_MS: u64 = 50;
 const IDLE_W: f32 = 140.0;
 const IDLE_H: f32 = 4.0;
 const FULL_W: f32 = 360.0;
-const FULL_H: f32 = 100.0;
+const FULL_H: f32 = 108.0;
 const SHRINK_DELAY_MS: u64 = 280; // sedikit di atas durasi animasi (250 ms)
 
 fn hwnd_of(window: &slint::Window) -> Option<HWND> {
