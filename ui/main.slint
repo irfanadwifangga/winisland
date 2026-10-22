@@ -367,11 +367,14 @@ export component AppTray inherits SystemTrayIcon {
     in-out property <bool> show-notif-body: false;
     // label monitor aktif, mis. "Display: Primary" atau "Display: 2"
     in-out property <string> display-label: "Display: Primary";
+    // true bila overlay otomatis disembunyikan saat aplikasi fullscreen aktif
+    in-out property <bool> hide-on-fullscreen: true;
 
     callback toggle();
     callback toggle-autostart(bool);
     callback toggle-notif-body(bool);
     callback cycle-display();
+    callback toggle-hide-on-fullscreen(bool);
     callback quit();
 
     clicked => { toggle(); }
@@ -395,6 +398,11 @@ export component AppTray inherits SystemTrayIcon {
         MenuItem {
             title: root.show-notif-body ? "Notification body: Shown" : "Notification body: Hidden";
             activated => { toggle-notif-body(!root.show-notif-body); }
+        }
+
+        MenuItem {
+            title: root.hide-on-fullscreen ? "Hide in fullscreen: On" : "Hide in fullscreen: Off";
+            activated => { toggle-hide-on-fullscreen(!root.hide-on-fullscreen); }
         }
 
         MenuItem {

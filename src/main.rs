@@ -16,6 +16,7 @@
 //! Renderer dikunci ke software lewat `BackendSelector` supaya pemakaian RAM tetap kecil.
 
 use core::ffi::c_void;
+use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -31,6 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 slint::include_modules!();
 mod autostart;
 mod config;
+mod fullscreen;
 mod media;
 mod monitor;
 
@@ -308,6 +310,10 @@ fn main() -> Result<(), slint::PlatformError> {
     // --- tray ---
     let tray = AppTray::new()?;
 
+    // status sembunyikan jendela: oleh pengguna (manual) atau oleh aplikasi fullscreen
+    let user_hidden = Rc::new(Cell::new(false));
+    let fs_suppressed = Rc::new(Cell::new(false));
+
     // status awal centang menu mengikuti isi registry
     tray.set_autostart(autostart::is_enabled());
     {
@@ -366,18 +372,53 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // status awal sakelar sembunyikan saat fullscreen di menu tray
+    tray.set_hide_on_fullscreen(config::hide_on_fullscreen());
+    {
+        let tray_weak = tray.as_weak();
+        let ui_weak = ui.as_weak();
+        let user_hidden = user_hidden.clone();
+        let fs_suppressed = fs_suppressed.clone();
+        tray.on_toggle_hide_on_fullscreen(move |wanted| {
+            if let Err(e) = config::set_hide_on_fullscreen(wanted) {
+                eprintln!("[config] failed to save hide on fullscreen setting: {e}");
+            }
+            if let Some(tray) = tray_weak.upgrade() {
+                tray.set_hide_on_fullscreen(config::hide_on_fullscreen());
+            }
+            if let Some(ui) = ui_weak.upgrade() {
+                if !wanted && fs_suppressed.get() {
+                    // Pengguna mematikan sakelar saat sedang fullscreen: buka kembali
+                    fs_suppressed.set(false);
+                    if !user_hidden.get() {
+                        ui.set_expanded(false);
+                        let _ = ui.show();
+                        try_apply(ui_weak.clone(), 1);
+                    }
+                }
+            }
+        });
+    }
+
     // Tampilkan atau sembunyikan overlay dari menu tray.
     let toggle = {
         let weak = ui.as_weak();
+        let user_hidden = user_hidden.clone();
+        let fs_suppressed = fs_suppressed.clone();
         Rc::new(move || {
             let Some(ui) = weak.upgrade() else { return };
             if ui.window().is_visible() {
+                user_hidden.set(true);
                 let _ = ui.hide();
             } else {
-                ui.set_expanded(false);
-                let _ = ui.show();
-                // jendela bisa dibuat ulang saat show(): pasang style lagi
-                try_apply(weak.clone(), 1);
+                user_hidden.set(false);
+                // Hanya buka jika tidak sedang di-suppress oleh fullscreen
+                if !fs_suppressed.get() || !config::hide_on_fullscreen() {
+                    ui.set_expanded(false);
+                    let _ = ui.show();
+                    // jendela bisa dibuat ulang saat show(): pasang style lagi
+                    try_apply(weak.clone(), 1);
+                }
             }
         })
     };
@@ -385,6 +426,49 @@ fn main() -> Result<(), slint::PlatformError> {
         let t = toggle.clone();
         tray.on_toggle(move || t());
     }
+
+    // --- deteksi aplikasi fullscreen ---
+    // Memeriksa secara berkala (500 ms) apakah ada aplikasi atau game layar penuh
+    // yang sedang aktif di monitor tempat overlay berada. Jika ada, overlay disembunyikan.
+    let _fs_timer = {
+        let timer = Timer::default();
+        let weak = ui.as_weak();
+        let user_hidden = user_hidden.clone();
+        let fs_suppressed = fs_suppressed.clone();
+        timer.start(TimerMode::Repeated, Duration::from_millis(500), move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if !config::hide_on_fullscreen() {
+                if fs_suppressed.get() {
+                    fs_suppressed.set(false);
+                    if !user_hidden.get() {
+                        ui.set_expanded(false);
+                        let _ = ui.show();
+                        try_apply(weak.clone(), 1);
+                    }
+                }
+                return;
+            }
+
+            let our_hwnd = hwnd_of(ui.window());
+            let is_fs =
+                fullscreen::is_foreground_fullscreen_on_monitor(our_hwnd, config::monitor_index());
+
+            if is_fs != fs_suppressed.get() {
+                fs_suppressed.set(is_fs);
+                if !user_hidden.get() {
+                    if is_fs {
+                        ui.set_expanded(false);
+                        let _ = ui.hide();
+                    } else {
+                        ui.set_expanded(false);
+                        let _ = ui.show();
+                        try_apply(weak.clone(), 1);
+                    }
+                }
+            }
+        });
+        timer
+    };
 
     tray.on_quit(|| {
         let _ = slint::quit_event_loop();

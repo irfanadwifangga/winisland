@@ -789,6 +789,7 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 21. `b2ee857` feat: add notification body privacy toggle to the tray menu (langkah 10e)
 22. `ab3a2f2` docs: record step 10e RAM bisect results and update commit history
 23. `8ab082e` feat: auto-switch to notifications on expand when no media is playing
+24. `12da5b5` feat: add multi-monitor and DPI-aware placement with tray selector (Opsi A)
 
 ### Multi-Monitor & DPI Aware Placement (22 Okt 2026)
 
@@ -801,3 +802,16 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 - **Verifikasi:** 20 unit tests lolos (termasuk 3 tes baru di `monitor.rs`), `cargo check` dan `cargo fmt` bersih.
 
 Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
+
+### Deteksi Aplikasi Fullscreen (Game / Video) (22 Okt 2026)
+
+- **Masalah:** Karena overlay disetel `always-on-top`, strip idle 4 px di tepi atas layar tetap terlihat atau berisiko terklik saat bermain game layar penuh (exclusive atau borderless) maupun menonton video layar penuh (YouTube, VLC, dsb).
+- **Penyelesaian:**
+  - Membuat modul `src/fullscreen.rs` yang memeriksa jendela aktif latar depan (`GetForegroundWindow`).
+  - Membandingkan batas koordinat jendela dengan monitor tempat overlay berada (`rect_covers_monitor`), serta memeriksa window style (`!has_caption && !is_child`).
+  - Mengabaikan desktop dan shell (`Progman`, `WorkerW`, `Shell_TrayWnd`, `Shell_SecondaryTrayWnd`, `Windows.UI.Core.CoreWindow`).
+  - Timer Slint 500 ms di UI loop memantau keadaan secara berkala (0% CPU idle, tanpa hook global yang memicu anti-cheat game).
+  - Sakelar "Hide in fullscreen: On / Off" di menu Tray yang disimpan persisten di registry `HKCU\Software\winisland\HideOnFullscreen` (bawaan: true).
+  - Membedakan sembunyikan manual pengguna (`user_hidden`) dengan supresi otomatis fullscreen (`fs_suppressed`).
+- **Verifikasi:** 27 unit tests lolos (7 tes baru di `fullscreen.rs`), `cargo check` dan `cargo fmt` bersih.
+

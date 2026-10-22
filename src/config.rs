@@ -3,6 +3,7 @@
 //!
 //! - `ShowNotificationBody`: apakah isi notifikasi boleh dibaca dan ditampilkan (bawaan: false).
 //! - `MonitorIndex`: indeks monitor tempat overlay ditampilkan (0 = Primary, 1 = Display 2, dst).
+//! - `HideOnFullscreen`: apakah overlay otomatis disembunyikan saat aplikasi fullscreen aktif (bawaan: true).
 
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -16,11 +17,15 @@ const APP_KEY: &str = r"Software\winisland";
 const SHOW_BODY_VALUE: &str = "ShowNotificationBody";
 /// Nilai DWORD: indeks monitor pilihan (0 = Primary, 1 = Display 2, dst).
 const MONITOR_INDEX_VALUE: &str = "MonitorIndex";
+/// Nilai DWORD: 1 = sembunyikan overlay saat fullscreen (bawaan: 1).
+const HIDE_ON_FULLSCREEN_VALUE: &str = "HideOnFullscreen";
 
 /// Keadaan saat ini di memori. Bernilai `false` (tersembunyi) sampai `load()` dipanggil.
 static SHOW_BODY: AtomicBool = AtomicBool::new(false);
 /// Indeks monitor saat ini di memori (0 = Primary).
 static MONITOR_INDEX: AtomicUsize = AtomicUsize::new(0);
+/// Status sembunyikan saat fullscreen (bawaan: true).
+static HIDE_ON_FULLSCREEN: AtomicBool = AtomicBool::new(true);
 
 /// Membaca preferensi dari registry ke memori. Panggil sekali saat startup.
 /// Nilai belum ada (pemakaian pertama) tidak dicatat sebagai error.
@@ -38,6 +43,13 @@ pub fn load() {
         .map(|v| v as usize)
         .unwrap_or(0);
     MONITOR_INDEX.store(monitor_idx, Ordering::Relaxed);
+
+    let hide_fs = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey_with_flags(APP_KEY, KEY_READ)
+        .and_then(|k| k.get_value::<u32, _>(HIDE_ON_FULLSCREEN_VALUE))
+        .map(|v| v != 0)
+        .unwrap_or(true);
+    HIDE_ON_FULLSCREEN.store(hide_fs, Ordering::Relaxed);
 }
 
 /// Apakah isi notifikasi boleh dibaca dan ditampilkan. Murah dan aman dipanggil dari thread mana pun.
@@ -63,4 +75,16 @@ pub fn set_monitor_index(index: usize) -> io::Result<()> {
     MONITOR_INDEX.store(index, Ordering::Relaxed);
     let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(APP_KEY)?;
     key.set_value(MONITOR_INDEX_VALUE, &(index as u32))
+}
+
+/// Apakah overlay harus disembunyikan otomatis saat ada aplikasi/game fullscreen (bawaan: true).
+pub fn hide_on_fullscreen() -> bool {
+    HIDE_ON_FULLSCREEN.load(Ordering::Relaxed)
+}
+
+/// Mengubah preferensi sembunyikan saat fullscreen dan menyimpannya ke registry.
+pub fn set_hide_on_fullscreen(enabled: bool) -> io::Result<()> {
+    HIDE_ON_FULLSCREEN.store(enabled, Ordering::Relaxed);
+    let (key, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(APP_KEY)?;
+    key.set_value(HIDE_ON_FULLSCREEN_VALUE, &u32::from(enabled))
 }
