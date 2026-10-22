@@ -34,6 +34,7 @@ mod autostart;
 mod calendar;
 mod config;
 mod fullscreen;
+mod gpu;
 mod media;
 mod monitor;
 mod stats;
@@ -283,11 +284,21 @@ fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
     }
 }
 
-/// Memperbarui statistik sistem (CPU %, RAM %, status baterai, dan tanggal lokal) pada UI.
-fn update_system_stats(ui: &MainWindow, cpu_tracker: &mut stats::CpuTracker) {
+/// Memperbarui statistik sistem (CPU %, RAM %, GPU %, status baterai, dan tanggal lokal) pada UI.
+fn update_system_stats(
+    ui: &MainWindow,
+    cpu_tracker: &mut stats::CpuTracker,
+    gpu_tracker: &mut gpu::GpuTracker,
+) {
     let cpu = cpu_tracker.sample();
     ui.set_cpu_pct(cpu as i32);
     ui.set_ram_pct(stats::get_ram_load() as i32);
+    if gpu_tracker.is_available() {
+        ui.set_has_gpu(true);
+        ui.set_gpu_pct(gpu_tracker.sample() as i32);
+    } else {
+        ui.set_has_gpu(false);
+    }
     if let Some(bat) = stats::get_battery_info() {
         ui.set_has_battery(true);
         ui.set_battery_pct(bat.percent as i32);
@@ -387,12 +398,15 @@ fn main() -> Result<(), slint::PlatformError> {
     let shrink_timer = Rc::new(Timer::default());
     let clock_timer = Rc::new(Timer::default());
     let cpu_tracker = Rc::new(RefCell::new(stats::CpuTracker::new()));
+    let gpu_tracker = Rc::new(RefCell::new(gpu::GpuTracker::new()));
     {
         let weak = ui.as_weak();
         let shrink_t = shrink_timer.clone();
         let clock_t = clock_timer.clone();
         let cpu_tracker_tick = cpu_tracker.clone();
+        let gpu_tracker_tick = gpu_tracker.clone();
         let cpu_tracker_exit = cpu_tracker.clone();
+        let gpu_tracker_exit = gpu_tracker.clone();
         let ct_hover = countdown_timer.clone();
         let sw_tick_hover = sw_tick_timer.clone();
         ui.on_hover_changed(move |hovered| {
@@ -408,6 +422,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     // Mulai timer jam 1 detik selama terlihat
                     let clock_weak = weak.clone();
                     let cpu_tracker_tick = cpu_tracker_tick.clone();
+                    let gpu_tracker_tick = gpu_tracker_tick.clone();
                     let ct_tick = ct_hover.clone();
                     clock_t.start(TimerMode::Repeated, Duration::from_secs(1), move || {
                         if let Some(ui) = clock_weak.upgrade() {
@@ -420,7 +435,8 @@ fn main() -> Result<(), slint::PlatformError> {
                             // Statistik sistem hanya diperbarui saat expanded (0% CPU idle saat peek/idle)
                             if ui.get_expanded() {
                                 let mut tracker = cpu_tracker_tick.borrow_mut();
-                                update_system_stats(&ui, &mut tracker);
+                                let mut gpu = gpu_tracker_tick.borrow_mut();
+                                update_system_stats(&ui, &mut tracker, &mut gpu);
                             }
                         }
                     });
@@ -432,6 +448,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 clock_t.stop(); // matikan timer jam saat idle (0% CPU idle)
                 sw_tick_hover.stop(); // matikan tick stopwatch saat idle (0% CPU idle)
                 cpu_tracker_exit.borrow_mut().reset(); // reset delta CPU tracker
+                gpu_tracker_exit.borrow_mut().reset(); // reset delta GPU tracker
 
                 let weak2 = weak.clone();
                 shrink_t.start(
@@ -452,6 +469,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let media_ctl = media_ctl.clone();
         let cpu_tracker_expand = cpu_tracker.clone();
+        let gpu_tracker_expand = gpu_tracker.clone();
         ui.on_expand_clicked(move || {
             let Some(ui) = weak.upgrade() else { return };
             ui.set_expanded(true);
@@ -463,7 +481,9 @@ fn main() -> Result<(), slint::PlatformError> {
                 let mut tracker = cpu_tracker_expand.borrow_mut();
                 tracker.reset();
                 let _ = tracker.sample();
-                update_system_stats(&ui, &mut tracker);
+                let mut gpu = gpu_tracker_expand.borrow_mut();
+                gpu.reset();
+                update_system_stats(&ui, &mut tracker, &mut gpu);
             }
 
             media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)

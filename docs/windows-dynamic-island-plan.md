@@ -7538,7 +7538,7 @@ Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
 
 
 
-| 16 | Statistik GPU (probe dulu, lalu implementasi bila layak) | Direncanakan |
+| 16 | Statistik GPU (probe dulu, lalu implementasi bila layak) | Selesai (55 tes lolos) |
 
 
 

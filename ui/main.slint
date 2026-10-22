@@ -1,400 +1,404 @@
-import { PlayIcon } from "components/icons.slint";
-import { TabItem } from "components/buttons.slint";
-import { NotifRow, CalendarCell } from "models.slint";
-import { HomeView } from "views/home_view.slint";
-import { NotifView } from "views/notif_view.slint";
-import { CalendarView } from "views/calendar_view.slint";
-import { TimerView } from "views/timer_view.slint";
-
-// Re-export struct agar dapat diakses oleh kode Rust melalui slint::include_modules!().
-export { NotifRow, CalendarCell }
-
-export component MainWindow inherits Window {
-    default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
-    no-frame: true;
-    always-on-top: true;
-    background: transparent;
-    preferred-width: 140px;
-    preferred-height: 4px;
-
-    // --- model 3-state (Idle -> Peek -> Expanded) ---
-    // true bila kursor mengarah ke strip tepi atas (mode intip tipis dengan jam)
-    in-out property <bool> peek: false;
-    // true bila pill diklik dan terbuka penuh menjadi dynamic island
-    in-out property <bool> expanded: false;
-    // teks jam digital untuk mode peek dan home (mis. "13:05")
-    in-out property <string> clock-text: "12:00";
-    // teks tanggal lokal untuk home (mis. "Thu, 22 Oct")
-    in-out property <string> date-text: "Thu, 22 Oct";
-
-    // --- statistik sistem (Langkah 13) ---
-    in-out property <int> cpu-pct: 0;
-    in-out property <int> ram-pct: 0;
-    in-out property <bool> has-battery: false;
-    in-out property <int> battery-pct: 0;
-    in-out property <bool> battery-charging: false;
-
-    // --- media playback ---
-    in-out property <string> track-title: "";
-    in-out property <string> track-artist: "";
-    // true bila ada sesi media aktif; false menyembunyikan tombol kontrol
-    in-out property <bool> has-media: false;
-    // true bila sedang diputar (tombol menampilkan pause), false bila dijeda (menampilkan play)
-    in-out property <bool> playing: false;
-
-    // --- notifikasi ---
-    // jumlah notifikasi mentah di Action Center (sebelum pengelompokan); 0 menyembunyikan lencana
-    in-out property <int> notif-total: 0;
-    // kelompok notifikasi terbaru (paling banyak 5)
-    in-out property <[NotifRow]> notifs: [];
-    // indeks kelompok yang sedang tampil
-    in-out property <int> notif-index: 0;
-    // true: pill menampilkan notifikasi; false: menampilkan media
-    in-out property <bool> show-notifs: false;
-
-    // --- kalender (Langkah 14) ---
-    // judul bulan, mis. "October 2026"
-    in-out property <string> cal-title: "October 2026";
-    // 42 sel grid kalender
-    in-out property <[CalendarCell]> cal-cells: [];
-
-    // --- timer & stopwatch (Langkah 15) ---
-    in-out property <int> timer-mode: 0;
-    in-out property <string> timer-display: "05:00";
-    in-out property <bool> timer-running: false;
-    in-out property <bool> timer-paused: false;
-    in-out property <bool> timer-finished: false;
-    in-out property <float> timer-progress: 1.0;
-    in-out property <string> stopwatch-display: "00:00.00";
-    in-out property <bool> stopwatch-running: false;
-    in-out property <bool> stopwatch-paused: false;
-
-    callback timer-start();
-    callback timer-pause();
-    callback timer-reset();
-    callback timer-set-min(int);
-    callback timer-adjust-min(int);
-
-    callback stopwatch-start();
-    callback stopwatch-pause();
-    callback stopwatch-reset();
-
-    // --- model tab dan ukuran dinamis (Langkah 12) ---
-    // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
-    in-out property <int> active-tab: 0;
-
-    // Dimensi target pill saat peek atau expanded sesuai tab aktif dan konten
-    property <length> target-pill-w:
-        root.expanded ? (
-            root.active-tab == 0 ? 380px :
-            root.active-tab == 1 ? 380px :
-            root.active-tab == 2 ? 360px :
-            360px
-        ) : (root.peek ? 175px : 140px);
-
-    property <length> target-pill-h:
-        root.expanded ? (
-            root.active-tab == 0 ? (
-                root.show-notifs ? 135px : (root.has-media ? 165px : 120px)
-            ) :
-            root.active-tab == 1 ? 260px :
-            root.active-tab == 2 ? 185px :
-            140px
-        ) : (root.peek ? 32px : 4px);
-
-    // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
-    // Saat peek atau expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
-    out property <length> requested-width: root.target-pill-w;
-    out property <length> requested-height: (root.expanded || root.peek) ? (root.target-pill-h + 8px) : 4px;
-
-    callback hover-changed(bool);
-    callback expand-clicked();
-    callback play-pause();
-    callback skip-next();
-    callback skip-previous();
-    callback request-window-resize();
-
-    callback cal-prev();
-    callback cal-next();
-    callback cal-today();
-
-    property <bool> hovered: area.has-hover;
-    changed hovered => { root.hover-changed(root.hovered); }
-
-    // Reset status notifikasi detail saat overlay ditutup
-    changed expanded => {
-        if (!root.expanded) {
-            root.show-notifs = false;
-            root.notif-index = 0;
-        }
-    }
-
-    // Minta Rust menyesuaikan ukuran jika status tampilan notifikasi detail berubah
-    changed show-notifs => {
-        if (root.active-tab == 0 && root.expanded) {
-            root.request-window-resize();
-        }
-    }
-
-    // Minta Rust menyesuaikan ukuran jendela saat tab berganti
-    changed active-tab => {
-        root.request-window-resize();
-    }
-
-    // Minta Rust menyesuaikan ukuran jika status media berubah saat di tab Home
-    changed has-media => {
-        if (root.active-tab == 0 && root.expanded) {
-            root.request-window-resize();
-        }
-    }
-
-    area := TouchArea {
-        Rectangle {
-            x: (parent.width - self.width) / 2;
-            y: (root.expanded || root.peek) ? 8px : 0px;
-            width: root.target-pill-w;
-            height: root.target-pill-h;
-            border-radius: min(self.height / 2, 28px);
-            background: black;
-            clip: true;
-
-            animate width, height, y {
-                duration: 250ms;
-                easing: ease-out;
-            }
-
-            // --- mode Peek (hover, belum diklik): tampilkan jam dan indikator ringkas ---
-            if root.peek && !root.expanded: Rectangle {
-                HorizontalLayout {
-                    alignment: center;
-                    spacing: 10px;
-
-                    // ikon musik kecil bila sedang memutar lagu
-                    if root.has-media && root.playing: Rectangle {
-                        width: 9px;
-                        height: 11px;
-                        y: (parent.height - self.height) / 2;
-                        PlayIcon {
-                            icon-color: #4ade80;
-                            width: 9px;
-                            height: 11px;
-                        }
-                    }
-
-                    Text {
-                        text: root.clock-text;
-                        color: white;
-                        font-size: 15px;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                    }
-
-                    // indikator countdown ringkas di mode peek jika timer berjalan
-                    if root.timer-running: Text {
-                        text: "⏱ \{root.timer-display}";
-                        color: #60a5fa;
-                        font-size: 13px;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                    }
-
-                    // titik merah indikator notifikasi aktif di Action Center
-                    if root.notif-total > 0: Rectangle {
-                        width: 7px;
-                        height: 7px;
-                        border-radius: 3.5px;
-                        background: #d64545;
-                        y: (parent.height - self.height) / 2;
-                    }
-                }
-
-                // Klik di mode peek untuk expand penuh ke dynamic island
-                TouchArea {
-                    clicked => {
-                        root.expanded = true;
-                        root.expand-clicked();
-                    }
-                }
-            }
-
-            // --- bar tab navigasi (hanya tampil saat expanded) ---
-            if root.expanded: HorizontalLayout {
-                y: 8px;
-                height: 22px;
-                alignment: center;
-                spacing: 6px;
-
-                TabItem {
-                    text: "Home";
-                    active: root.active-tab == 0;
-                    clicked => { root.active-tab = 0; }
-                }
-
-                TabItem {
-                    text: "Calendar";
-                    active: root.active-tab == 1;
-                    clicked => { root.active-tab = 1; }
-                }
-
-                TabItem {
-                    text: "Timer";
-                    active: root.active-tab == 2;
-                    clicked => { root.active-tab = 2; }
-                }
-
-                TabItem {
-                    text: "Mail";
-                    active: root.active-tab == 3;
-                    clicked => { root.active-tab = 3; }
-                }
-            }
-
-            // --- konten tab Home (active-tab == 0) ---
-            if root.expanded && root.active-tab == 0: Rectangle {
-                y: 32px;
-                height: parent.height - 32px;
-
-                if !root.show-notifs: HomeView {
-                    clock-text: root.clock-text;
-                    date-text: root.date-text;
-                    cpu-pct: root.cpu-pct;
-                    ram-pct: root.ram-pct;
-                    has-battery: root.has-battery;
-                    battery-pct: root.battery-pct;
-                    battery-charging: root.battery-charging;
-                    notif-total: root.notif-total;
-                    notifs: root.notifs;
-                    has-media: root.has-media;
-                    track-title: root.track-title;
-                    track-artist: root.track-artist;
-                    playing: root.playing;
-
-                    notif-clicked => { root.show-notifs = true; }
-                    play-pause => { root.play-pause(); }
-                    skip-next => { root.skip-next(); }
-                    skip-previous => { root.skip-previous(); }
-                }
-
-                if root.show-notifs: NotifView {
-                    notifs: root.notifs;
-                    notif-index <=> root.notif-index;
-                    back-clicked => { root.show-notifs = false; }
-                }
-            }
-
-            // --- konten tab Calendar (active-tab == 1) ---
-            if root.expanded && root.active-tab == 1: CalendarView {
-                y: 32px;
-                height: parent.height - 32px;
-                cal-title: root.cal-title;
-                cal-cells: root.cal-cells;
-                cal-prev => { root.cal-prev(); }
-                cal-next => { root.cal-next(); }
-                cal-today => { root.cal-today(); }
-            }
-
-            // --- konten tab Timer (active-tab == 2) ---
-            if root.expanded && root.active-tab == 2: TimerView {
-                y: 32px;
-                height: parent.height - 32px;
-                mode <=> root.timer-mode;
-                timer-display: root.timer-display;
-                timer-running: root.timer-running;
-                timer-paused: root.timer-paused;
-                timer-finished: root.timer-finished;
-                timer-progress: root.timer-progress;
-                stopwatch-display: root.stopwatch-display;
-                stopwatch-running: root.stopwatch-running;
-                stopwatch-paused: root.stopwatch-paused;
-
-                timer-start => { root.timer-start(); }
-                timer-pause => { root.timer-pause(); }
-                timer-reset => { root.timer-reset(); }
-                timer-set-min(m) => { root.timer-set-min(m); }
-                timer-adjust-min(d) => { root.timer-adjust-min(d); }
-
-                stopwatch-start => { root.stopwatch-start(); }
-                stopwatch-pause => { root.stopwatch-pause(); }
-                stopwatch-reset => { root.stopwatch-reset(); }
-            }
-
-            // --- konten tab Mail (active-tab == 3) ---
-            if root.expanded && root.active-tab == 3: VerticalLayout {
-                y: 32px;
-                height: parent.height - 32px;
-                alignment: center;
-                spacing: 6px;
-                padding: 16px;
-
-                Text {
-                    text: "Mail & Tasks";
-                    color: white;
-                    font-size: 16px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                }
-
-                Text {
-                    text: "Integration arriving in Step 17";
-                    color: #888888;
-                    font-size: 12px;
-                    horizontal-alignment: center;
-                }
-            }
-        }
-    }
-}
-
-export component AppTray inherits SystemTrayIcon {
-    icon: @image-url("tray.png");
-    tooltip: "winisland";
-
-    in-out property <bool> autostart: false;
-    // true bila isi notifikasi boleh dibaca dan ditampilkan (bawaan: false)
-    in-out property <bool> show-notif-body: false;
-    // label monitor aktif, mis. "Display: Primary" atau "Display: 2"
-    in-out property <string> display-label: "Display: Primary";
-    // true bila overlay otomatis disembunyikan saat aplikasi fullscreen aktif
-    in-out property <bool> hide-on-fullscreen: true;
-
-    callback toggle();
-    callback toggle-autostart(bool);
-    callback toggle-notif-body(bool);
-    callback cycle-display();
-    callback toggle-hide-on-fullscreen(bool);
-    callback quit();
-
-    clicked => { toggle(); }
-
-    Menu {
-        MenuItem {
-            title: "Show / Hide";
-            activated => { toggle(); }
-        }
-
-        MenuItem {
-            title: root.display-label;
-            activated => { cycle-display(); }
-        }
-
-        MenuItem {
-            title: root.autostart ? "Autostart: On" : "Autostart: Off";
-            activated => { toggle-autostart(!root.autostart); }
-        }
-
-        MenuItem {
-            title: root.show-notif-body ? "Notification body: Shown" : "Notification body: Hidden";
-            activated => { toggle-notif-body(!root.show-notif-body); }
-        }
-
-        MenuItem {
-            title: root.hide-on-fullscreen ? "Hide in fullscreen: On" : "Hide in fullscreen: Off";
-            activated => { toggle-hide-on-fullscreen(!root.hide-on-fullscreen); }
-        }
-
-        MenuItem {
-            title: "Quit";
-            activated => { quit(); }
-        }
-    }
-}
+import { PlayIcon } from "components/icons.slint";
+import { TabItem } from "components/buttons.slint";
+import { NotifRow, CalendarCell } from "models.slint";
+import { HomeView } from "views/home_view.slint";
+import { NotifView } from "views/notif_view.slint";
+import { CalendarView } from "views/calendar_view.slint";
+import { TimerView } from "views/timer_view.slint";
+
+// Re-export struct agar dapat diakses oleh kode Rust melalui slint::include_modules!().
+export { NotifRow, CalendarCell }
+
+export component MainWindow inherits Window {
+    default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    preferred-width: 140px;
+    preferred-height: 4px;
+
+    // --- model 3-state (Idle -> Peek -> Expanded) ---
+    // true bila kursor mengarah ke strip tepi atas (mode intip tipis dengan jam)
+    in-out property <bool> peek: false;
+    // true bila pill diklik dan terbuka penuh menjadi dynamic island
+    in-out property <bool> expanded: false;
+    // teks jam digital untuk mode peek dan home (mis. "13:05")
+    in-out property <string> clock-text: "12:00";
+    // teks tanggal lokal untuk home (mis. "Thu, 22 Oct")
+    in-out property <string> date-text: "Thu, 22 Oct";
+
+    // --- statistik sistem (Langkah 13, 16) ---
+    in-out property <int> cpu-pct: 0;
+    in-out property <int> ram-pct: 0;
+    in-out property <bool> has-gpu: false;
+    in-out property <int> gpu-pct: 0;
+    in-out property <bool> has-battery: false;
+    in-out property <int> battery-pct: 0;
+    in-out property <bool> battery-charging: false;
+
+    // --- media playback ---
+    in-out property <string> track-title: "";
+    in-out property <string> track-artist: "";
+    // true bila ada sesi media aktif; false menyembunyikan tombol kontrol
+    in-out property <bool> has-media: false;
+    // true bila sedang diputar (tombol menampilkan pause), false bila dijeda (menampilkan play)
+    in-out property <bool> playing: false;
+
+    // --- notifikasi ---
+    // jumlah notifikasi mentah di Action Center (sebelum pengelompokan); 0 menyembunyikan lencana
+    in-out property <int> notif-total: 0;
+    // kelompok notifikasi terbaru (paling banyak 5)
+    in-out property <[NotifRow]> notifs: [];
+    // indeks kelompok yang sedang tampil
+    in-out property <int> notif-index: 0;
+    // true: pill menampilkan notifikasi; false: menampilkan media
+    in-out property <bool> show-notifs: false;
+
+    // --- kalender (Langkah 14) ---
+    // judul bulan, mis. "October 2026"
+    in-out property <string> cal-title: "October 2026";
+    // 42 sel grid kalender
+    in-out property <[CalendarCell]> cal-cells: [];
+
+    // --- timer & stopwatch (Langkah 15) ---
+    in-out property <int> timer-mode: 0;
+    in-out property <string> timer-display: "05:00";
+    in-out property <bool> timer-running: false;
+    in-out property <bool> timer-paused: false;
+    in-out property <bool> timer-finished: false;
+    in-out property <float> timer-progress: 1.0;
+    in-out property <string> stopwatch-display: "00:00.00";
+    in-out property <bool> stopwatch-running: false;
+    in-out property <bool> stopwatch-paused: false;
+
+    callback timer-start();
+    callback timer-pause();
+    callback timer-reset();
+    callback timer-set-min(int);
+    callback timer-adjust-min(int);
+
+    callback stopwatch-start();
+    callback stopwatch-pause();
+    callback stopwatch-reset();
+
+    // --- model tab dan ukuran dinamis (Langkah 12) ---
+    // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
+    in-out property <int> active-tab: 0;
+
+    // Dimensi target pill saat peek atau expanded sesuai tab aktif dan konten
+    property <length> target-pill-w:
+        root.expanded ? (
+            root.active-tab == 0 ? 380px :
+            root.active-tab == 1 ? 380px :
+            root.active-tab == 2 ? 360px :
+            360px
+        ) : (root.peek ? 175px : 140px);
+
+    property <length> target-pill-h:
+        root.expanded ? (
+            root.active-tab == 0 ? (
+                root.show-notifs ? 135px : (root.has-media ? 165px : 120px)
+            ) :
+            root.active-tab == 1 ? 260px :
+            root.active-tab == 2 ? 185px :
+            140px
+        ) : (root.peek ? 32px : 4px);
+
+    // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
+    // Saat peek atau expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
+    out property <length> requested-width: root.target-pill-w;
+    out property <length> requested-height: (root.expanded || root.peek) ? (root.target-pill-h + 8px) : 4px;
+
+    callback hover-changed(bool);
+    callback expand-clicked();
+    callback play-pause();
+    callback skip-next();
+    callback skip-previous();
+    callback request-window-resize();
+
+    callback cal-prev();
+    callback cal-next();
+    callback cal-today();
+
+    property <bool> hovered: area.has-hover;
+    changed hovered => { root.hover-changed(root.hovered); }
+
+    // Reset status notifikasi detail saat overlay ditutup
+    changed expanded => {
+        if (!root.expanded) {
+            root.show-notifs = false;
+            root.notif-index = 0;
+        }
+    }
+
+    // Minta Rust menyesuaikan ukuran jika status tampilan notifikasi detail berubah
+    changed show-notifs => {
+        if (root.active-tab == 0 && root.expanded) {
+            root.request-window-resize();
+        }
+    }
+
+    // Minta Rust menyesuaikan ukuran jendela saat tab berganti
+    changed active-tab => {
+        root.request-window-resize();
+    }
+
+    // Minta Rust menyesuaikan ukuran jika status media berubah saat di tab Home
+    changed has-media => {
+        if (root.active-tab == 0 && root.expanded) {
+            root.request-window-resize();
+        }
+    }
+
+    area := TouchArea {
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (root.expanded || root.peek) ? 8px : 0px;
+            width: root.target-pill-w;
+            height: root.target-pill-h;
+            border-radius: min(self.height / 2, 28px);
+            background: black;
+            clip: true;
+
+            animate width, height, y {
+                duration: 250ms;
+                easing: ease-out;
+            }
+
+            // --- mode Peek (hover, belum diklik): tampilkan jam dan indikator ringkas ---
+            if root.peek && !root.expanded: Rectangle {
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 10px;
+
+                    // ikon musik kecil bila sedang memutar lagu
+                    if root.has-media && root.playing: Rectangle {
+                        width: 9px;
+                        height: 11px;
+                        y: (parent.height - self.height) / 2;
+                        PlayIcon {
+                            icon-color: #4ade80;
+                            width: 9px;
+                            height: 11px;
+                        }
+                    }
+
+                    Text {
+                        text: root.clock-text;
+                        color: white;
+                        font-size: 15px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+
+                    // indikator countdown ringkas di mode peek jika timer berjalan
+                    if root.timer-running: Text {
+                        text: "⏱ \{root.timer-display}";
+                        color: #60a5fa;
+                        font-size: 13px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+
+                    // titik merah indikator notifikasi aktif di Action Center
+                    if root.notif-total > 0: Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: #d64545;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                // Klik di mode peek untuk expand penuh ke dynamic island
+                TouchArea {
+                    clicked => {
+                        root.expanded = true;
+                        root.expand-clicked();
+                    }
+                }
+            }
+
+            // --- bar tab navigasi (hanya tampil saat expanded) ---
+            if root.expanded: HorizontalLayout {
+                y: 8px;
+                height: 22px;
+                alignment: center;
+                spacing: 6px;
+
+                TabItem {
+                    text: "Home";
+                    active: root.active-tab == 0;
+                    clicked => { root.active-tab = 0; }
+                }
+
+                TabItem {
+                    text: "Calendar";
+                    active: root.active-tab == 1;
+                    clicked => { root.active-tab = 1; }
+                }
+
+                TabItem {
+                    text: "Timer";
+                    active: root.active-tab == 2;
+                    clicked => { root.active-tab = 2; }
+                }
+
+                TabItem {
+                    text: "Mail";
+                    active: root.active-tab == 3;
+                    clicked => { root.active-tab = 3; }
+                }
+            }
+
+            // --- konten tab Home (active-tab == 0) ---
+            if root.expanded && root.active-tab == 0: Rectangle {
+                y: 32px;
+                height: parent.height - 32px;
+
+                if !root.show-notifs: HomeView {
+                    clock-text: root.clock-text;
+                    date-text: root.date-text;
+                    cpu-pct: root.cpu-pct;
+                    ram-pct: root.ram-pct;
+                    has-gpu: root.has-gpu;
+                    gpu-pct: root.gpu-pct;
+                    has-battery: root.has-battery;
+                    battery-pct: root.battery-pct;
+                    battery-charging: root.battery-charging;
+                    notif-total: root.notif-total;
+                    notifs: root.notifs;
+                    has-media: root.has-media;
+                    track-title: root.track-title;
+                    track-artist: root.track-artist;
+                    playing: root.playing;
+
+                    notif-clicked => { root.show-notifs = true; }
+                    play-pause => { root.play-pause(); }
+                    skip-next => { root.skip-next(); }
+                    skip-previous => { root.skip-previous(); }
+                }
+
+                if root.show-notifs: NotifView {
+                    notifs: root.notifs;
+                    notif-index <=> root.notif-index;
+                    back-clicked => { root.show-notifs = false; }
+                }
+            }
+
+            // --- konten tab Calendar (active-tab == 1) ---
+            if root.expanded && root.active-tab == 1: CalendarView {
+                y: 32px;
+                height: parent.height - 32px;
+                cal-title: root.cal-title;
+                cal-cells: root.cal-cells;
+                cal-prev => { root.cal-prev(); }
+                cal-next => { root.cal-next(); }
+                cal-today => { root.cal-today(); }
+            }
+
+            // --- konten tab Timer (active-tab == 2) ---
+            if root.expanded && root.active-tab == 2: TimerView {
+                y: 32px;
+                height: parent.height - 32px;
+                mode <=> root.timer-mode;
+                timer-display: root.timer-display;
+                timer-running: root.timer-running;
+                timer-paused: root.timer-paused;
+                timer-finished: root.timer-finished;
+                timer-progress: root.timer-progress;
+                stopwatch-display: root.stopwatch-display;
+                stopwatch-running: root.stopwatch-running;
+                stopwatch-paused: root.stopwatch-paused;
+
+                timer-start => { root.timer-start(); }
+                timer-pause => { root.timer-pause(); }
+                timer-reset => { root.timer-reset(); }
+                timer-set-min(m) => { root.timer-set-min(m); }
+                timer-adjust-min(d) => { root.timer-adjust-min(d); }
+
+                stopwatch-start => { root.stopwatch-start(); }
+                stopwatch-pause => { root.stopwatch-pause(); }
+                stopwatch-reset => { root.stopwatch-reset(); }
+            }
+
+            // --- konten tab Mail (active-tab == 3) ---
+            if root.expanded && root.active-tab == 3: VerticalLayout {
+                y: 32px;
+                height: parent.height - 32px;
+                alignment: center;
+                spacing: 6px;
+                padding: 16px;
+
+                Text {
+                    text: "Mail & Tasks";
+                    color: white;
+                    font-size: 16px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Integration arriving in Step 17";
+                    color: #888888;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("tray.png");
+    tooltip: "winisland";
+
+    in-out property <bool> autostart: false;
+    // true bila isi notifikasi boleh dibaca dan ditampilkan (bawaan: false)
+    in-out property <bool> show-notif-body: false;
+    // label monitor aktif, mis. "Display: Primary" atau "Display: 2"
+    in-out property <string> display-label: "Display: Primary";
+    // true bila overlay otomatis disembunyikan saat aplikasi fullscreen aktif
+    in-out property <bool> hide-on-fullscreen: true;
+
+    callback toggle();
+    callback toggle-autostart(bool);
+    callback toggle-notif-body(bool);
+    callback cycle-display();
+    callback toggle-hide-on-fullscreen(bool);
+    callback quit();
+
+    clicked => { toggle(); }
+
+    Menu {
+        MenuItem {
+            title: "Show / Hide";
+            activated => { toggle(); }
+        }
+
+        MenuItem {
+            title: root.display-label;
+            activated => { cycle-display(); }
+        }
+
+        MenuItem {
+            title: root.autostart ? "Autostart: On" : "Autostart: Off";
+            activated => { toggle-autostart(!root.autostart); }
+        }
+
+        MenuItem {
+            title: root.show-notif-body ? "Notification body: Shown" : "Notification body: Hidden";
+            activated => { toggle-notif-body(!root.show-notif-body); }
+        }
+
+        MenuItem {
+            title: root.hide-on-fullscreen ? "Hide in fullscreen: On" : "Hide in fullscreen: Off";
+            activated => { toggle-hide-on-fullscreen(!root.hide-on-fullscreen); }
+        }
+
+        MenuItem {
+            title: "Quit";
+            activated => { quit(); }
+        }
+    }
+}
