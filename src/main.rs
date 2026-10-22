@@ -365,12 +365,6 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.show()?;
 
-    // Inisialisasi status volume audio master sistem
-    if let Ok(v) = volume::get_master_volume() {
-        ui.set_volume_level(v.level as i32);
-        ui.set_volume_muted(v.muted);
-    }
-
     // --- media: langganan event SMTC lewat worker thread
     // `media_ctl` meminta worker membaca ulang (saat hover, sebagai jaring pengaman)
     // dan mengirim perintah tombol.
@@ -423,7 +417,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let volume_weak = ui.as_weak();
     let volume_seq_watcher = volume_seq.clone();
 
-    let _volume_watcher = match volume::VolumeWatcher::start(move |state| {
+    let _volume_watcher = match volume::VolumeWatcher::start(move |state, is_initial| {
         let weak = volume_weak.clone();
         let seq = volume_seq_watcher.clone();
         let this_seq = seq.fetch_add(1, Ordering::SeqCst) + 1;
@@ -432,8 +426,8 @@ fn main() -> Result<(), slint::PlatformError> {
             ui.set_volume_level(state.level as i32);
             ui.set_volume_muted(state.muted);
 
-            // Tampilkan popup OSD hanya jika Dynamic Island tidak sedang expanded
-            if !ui.get_expanded() {
+            // Tampilkan popup OSD hanya jika bukan inisialisasi awal dan island tidak expanded
+            if !is_initial && !ui.get_expanded() {
                 ui.set_show_volume_osd(true);
                 place(&ui, VOLUME_OSD_WINDOW_W, VOLUME_OSD_WINDOW_H);
 
