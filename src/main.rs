@@ -24,14 +24,15 @@ use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, Timer, TimerMode, VecModel};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SM_CXSCREEN,
-    SW_HIDE, SW_SHOWNA, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SW_HIDE, SW_SHOWNA,
+    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 slint::include_modules!();
 mod autostart;
 mod config;
 mod media;
+mod monitor;
 
 mod notif;
 // `Snapshot::groups` hanya dibaca oleh `notif::debug_run` (build debug).
@@ -94,16 +95,29 @@ fn apply_overlay_style(ui: &MainWindow) -> bool {
     }
 }
 
-/// Ukuran dalam piksel logis; dikonversi ke fisik sesuai DPI, lalu dipusatkan di tepi atas.
+/// Ukuran dalam piksel logis; dikonversi ke fisik sesuai DPI, lalu dipusatkan di tepi atas monitor pilihan.
 fn place(ui: &MainWindow, w: f32, h: f32) {
     let sf = ui.window().scale_factor();
     let pw = (w * sf).round() as u32;
     let ph = (h * sf).round() as u32;
-    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+    let mon = monitor::get_monitor(config::monitor_index());
+    let x = mon.left + (mon.width - pw as i32) / 2;
+    let y = mon.top;
     ui.window().set_size(PhysicalSize::new(pw, ph));
-    ui.window()
-        .set_position(PhysicalPosition::new((screen_w - pw as i32) / 2, 0));
-    eprintln!("[overlay] place {pw}x{ph}");
+    ui.window().set_position(PhysicalPosition::new(x, y));
+    eprintln!(
+        "[overlay] place {pw}x{ph} on display {} at ({x}, {y})",
+        config::monitor_index()
+    );
+}
+
+/// Menempatkan ulang jendela di monitor pilihan dengan ukuran yang sesuai status expanded saat ini.
+fn re_place(ui: &MainWindow) {
+    if ui.get_expanded() {
+        place(ui, FULL_W, FULL_H);
+    } else {
+        place(ui, IDLE_W, IDLE_H);
+    }
 }
 
 /// Memasang style overlay lalu menempatkan jendela dalam keadaan idle.
@@ -329,6 +343,25 @@ fn main() -> Result<(), slint::PlatformError> {
                 if ui.get_expanded() {
                     refresh_notifications(ui_weak.clone());
                 }
+            }
+        });
+    }
+
+    // status awal label display di menu tray
+    tray.set_display_label(monitor::monitor_label(config::monitor_index()).into());
+    {
+        let tray_weak = tray.as_weak();
+        let ui_weak = ui.as_weak();
+        tray.on_cycle_display(move || {
+            let next_idx = monitor::next_monitor_index(config::monitor_index());
+            if let Err(e) = config::set_monitor_index(next_idx) {
+                eprintln!("[config] failed to save monitor index: {e}");
+            }
+            if let Some(tray) = tray_weak.upgrade() {
+                tray.set_display_label(monitor::monitor_label(next_idx).into());
+            }
+            if let Some(ui) = ui_weak.upgrade() {
+                re_place(&ui);
             }
         });
     }

@@ -365,10 +365,13 @@ export component AppTray inherits SystemTrayIcon {
     in-out property <bool> autostart: false;
     // true bila isi notifikasi boleh dibaca dan ditampilkan (bawaan: false)
     in-out property <bool> show-notif-body: false;
+    // label monitor aktif, mis. "Display: Primary" atau "Display: 2"
+    in-out property <string> display-label: "Display: Primary";
 
     callback toggle();
     callback toggle-autostart(bool);
     callback toggle-notif-body(bool);
+    callback cycle-display();
     callback quit();
 
     clicked => { toggle(); }
@@ -377,6 +380,11 @@ export component AppTray inherits SystemTrayIcon {
         MenuItem {
             title: "Show / Hide";
             activated => { toggle(); }
+        }
+
+        MenuItem {
+            title: root.display-label;
+            activated => { cycle-display(); }
         }
 
         MenuItem {

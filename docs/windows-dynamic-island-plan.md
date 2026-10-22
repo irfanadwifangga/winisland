@@ -788,11 +788,16 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 20. `4c353e9` feat: show notifications in the expanded overlay with badge and mode toggle (langkah 10d)
 21. `b2ee857` feat: add notification body privacy toggle to the tray menu (langkah 10e)
 22. `ab3a2f2` docs: record step 10e RAM bisect results and update commit history
+23. `8ab082e` feat: auto-switch to notifications on expand when no media is playing
 
-### UX Polish (22 Okt 2026): Notifikasi Otomatis Tampil Bila Media Kosong
+### Multi-Monitor & DPI Aware Placement (22 Okt 2026)
 
-- **Masalah:** Bila tidak ada media yang aktif (`has_media == false`), saat overlay di-expand tampilan awal adalah 'Nothing playing' kosong, meski ada notifikasi di Action Center. Pengguna harus mengklik lencana di pojok kanan bawah secara manual.
-- **Penyelesaian:** Di `ui/main.slint`, saat `expanded` menjadi true: bila `!has-media && notif-total > 0`, set `show-notifs = true`. Di `src/main.rs`, bila `apply_notifications` mendeteksi ada notifikasi saat jendela sedang expanded tanpa media aktif, tampilan otomatis dialihkan ke notifikasi.
-- **Verifikasi:** 17 unit tests lolos, `cargo check` dan `cargo fmt` bersih.
+- **Masalah:** Fungsi `place()` sebelumnya memakai `GetSystemMetrics(SM_CXSCREEN)` yang hanya mengambil lebar monitor utama dan mengasumsikan koordinat mulai dari (0, 0). Pada desktop multi-monitor, koordinat bisa memiliki offset atau bernilai negatif, dan jendela tidak bisa dipindahkan ke monitor sekunder.
+- **Penyelesaian (Opsi A - Monitor Tetap + Pilihan di Tray):**
+  - Membuat modul `src/monitor.rs` menggunakan Win32 GDI (`EnumDisplayMonitors`, `GetMonitorInfoW`, `MONITORINFO`). Monitor utama selalu diurutkan di indeks 0.
+  - Koordinat penempatan dihitung presisi: `x = mon.left + (mon.width - pw) / 2` dan `y = mon.top`.
+  - Item menu baru di Tray `display-label` ("Display: Primary", "Display: 2", dst.) dengan callback `cycle-display` untuk berpindah monitor secara dinamis.
+  - Preferensi monitor disimpan persisten di registry `HKCU\Software\winisland\MonitorIndex`.
+- **Verifikasi:** 20 unit tests lolos (termasuk 3 tes baru di `monitor.rs`), `cargo check` dan `cargo fmt` bersih.
 
 Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
