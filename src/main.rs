@@ -7,6 +7,8 @@
 //!
 //! - `media.rs`: memantau judul dan artis media lewat event SMTC (worker thread).
 //! - `autostart.rs`: mengatur autostart lewat registry (`HKCU\...\Run`).
+//! - `config.rs`: preferensi pengguna di registry (`HKCU\Software\winisland`), saat ini
+//!   sakelar privasi "tampilkan isi notifikasi".
 //! - `notif.rs` dan `notif_text.rs`: membaca notifikasi toast (daftar, tanpa event) setiap
 //!   pill dibuka, lalu membersihkan dan mengelompokkannya. Hasilnya tampil sebagai lencana
 //!   jumlah dan tampilan notifikasi di pill (langkah 10d).
@@ -28,6 +30,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 slint::include_modules!();
 mod autostart;
+mod config;
 mod media;
 
 mod notif;
@@ -142,11 +145,12 @@ fn unix_now_secs() -> i64 {
 
 /// Membaca notifikasi di thread latar (pembacaan WinRT memblokir 12-50 ms), lalu mengirim
 /// hasilnya ke UI. Dilewati bila pembacaan sebelumnya belum selesai.
-/// Isi pesan hanya dibaca bila `include_body` true (sakelar privasi).
-fn refresh_notifications(weak: slint::Weak<MainWindow>, include_body: bool) {
+/// Isi pesan hanya dibaca bila sakelar privasi (`config::show_body`) aktif.
+fn refresh_notifications(weak: slint::Weak<MainWindow>) {
     if NOTIF_FETCHING.swap(true, Ordering::AcqRel) {
         return;
     }
+    let include_body = config::show_body();
     std::thread::spawn(move || {
         let _guard = NotifFetchGuard;
         let snapshot = match notif::fetch(include_body) {
@@ -167,7 +171,11 @@ fn refresh_notifications(weak: slint::Weak<MainWindow>, include_body: bool) {
 
 /// Mengisi properti notifikasi di UI; dipanggil di thread UI. `None` (akses ditolak atau
 /// pembacaan gagal) mengosongkan daftar sehingga lencana tersembunyi.
+///
+/// Sakelar privasi dibaca SAAT INI, bukan saat pembacaan dimulai: bila pengguna baru saja
+/// memilih Hidden, isi dari pembacaan yang masih berjalan tidak boleh sampai ke layar.
 fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
+    let show_body = config::show_body();
     let (total, rows) = match snapshot {
         Some(s) => {
             let rows: Vec<NotifRow> = s
@@ -179,10 +187,15 @@ fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
                     } else {
                         it.app.clone()
                     };
+                    let body = if show_body {
+                        it.body.clone()
+                    } else {
+                        String::new()
+                    };
                     NotifRow {
                         header: header.into(),
                         title: it.title.clone().into(),
-                        body: it.body.clone().into(),
+                        body: body.into(),
                         age: format_age(age_secs(it.time, now)).into(),
                     }
                 })
@@ -201,6 +214,9 @@ fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // baca preferensi dari registry dulu: sakelar privasi bawaannya tersembunyi
+    config::load();
+
     // kunci backend winit dan renderer software (RAM idle jauh lebih kecil daripada femtovg)
     slint::BackendSelector::new()
         .backend_name("winit".into())
@@ -239,10 +255,6 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.on_skip_previous(move || ctl.skip_previous());
     }
 
-    // Sakelar privasi sementara (sampai ada menu tray di langkah 10e): isi pesan hanya
-    // dibaca bila variabel lingkungan `WINISLAND_NOTIF_BODY` diset. Bawaan: tidak dibaca.
-    let include_body = std::env::var_os("WINISLAND_NOTIF_BODY").is_some();
-
     // --- hover expand/collapse
     // Saat expand, jendela membesar dulu baru konten beranimasi. Saat collapse, konten
     // mengecil dulu dan jendela baru mengecil setelah `SHRINK_DELAY_MS`.
@@ -257,7 +269,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 place(&ui, FULL_W, FULL_H); // jendela membesar dulu
                 ui.set_expanded(true); // baru konten beranimasi
                 media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
-                refresh_notifications(weak.clone(), include_body); // baca notifikasi di thread latar
+                refresh_notifications(weak.clone()); // baca notifikasi di thread latar
             } else {
                 ui.set_expanded(false); // konten mengecil dulu
                 let weak2 = weak.clone();
@@ -288,6 +300,31 @@ fn main() -> Result<(), slint::PlatformError> {
             }
             // selalu baca ulang dari registry agar centang menunjukkan keadaan sebenarnya
             tray.set_autostart(autostart::is_enabled());
+        });
+    }
+
+    // sakelar privasi isi notifikasi: menu mengikuti keadaan di memori
+    tray.set_show_notif_body(config::show_body());
+    {
+        let tray_weak = tray.as_weak();
+        let ui_weak = ui.as_weak();
+        tray.on_toggle_notif_body(move |wanted| {
+            // memori diubah lebih dulu di dalam set_show_body, jadi berlaku seketika
+            // walau penyimpanan ke registry gagal
+            if let Err(e) = config::set_show_body(wanted) {
+                eprintln!("[config] failed to save the notification body setting: {e}");
+            }
+            if let Some(tray) = tray_weak.upgrade() {
+                tray.set_show_notif_body(config::show_body());
+            }
+            if let Some(ui) = ui_weak.upgrade() {
+                // buang notifikasi yang sudah tampil supaya isi lama tidak tersisa;
+                // hover berikutnya membaca ulang, atau sekarang bila pill sedang terbuka
+                apply_notifications(&ui, None, 0);
+                if ui.get_expanded() {
+                    refresh_notifications(ui_weak.clone());
+                }
+            }
         });
     }
 

@@ -94,13 +94,13 @@ pub fn fetch(include_body: bool) -> Result<Fetch> {
 
 /// Uji sementara untuk langkah 10c (hanya build debug): membaca tiga kali dan
 /// mencetak ringkasan serta lama tiap pembacaan, supaya biaya pembacaan terlihat.
-/// Isi pesan hanya dibaca bila variabel lingkungan `WINISLAND_NOTIF_BODY` diset.
+/// Isi pesan hanya dibaca bila sakelar privasi aktif (`config::show_body`, dari menu tray).
 #[cfg(debug_assertions)]
 pub fn debug_run() {
     use crate::notif_text::{age_secs, ticks_from_unix_secs};
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-    let include_body = std::env::var_os("WINISLAND_NOTIF_BODY").is_some();
+    let include_body = crate::config::show_body();
     eprintln!("[notif] include_body={include_body}");
 
     for round in 1..=3 {

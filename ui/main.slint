@@ -362,9 +362,12 @@ export component AppTray inherits SystemTrayIcon {
     tooltip: "winisland";
 
     in-out property <bool> autostart: false;
+    // true bila isi notifikasi boleh dibaca dan ditampilkan (bawaan: false)
+    in-out property <bool> show-notif-body: false;
 
     callback toggle();
     callback toggle-autostart(bool);
+    callback toggle-notif-body(bool);
     callback quit();
 
     clicked => { toggle(); }
@@ -378,6 +381,11 @@ export component AppTray inherits SystemTrayIcon {
         MenuItem {
             title: root.autostart ? "Autostart: On" : "Autostart: Off";
             activated => { toggle-autostart(!root.autostart); }
+        }
+
+        MenuItem {
+            title: root.show-notif-body ? "Notification body: Shown" : "Notification body: Hidden";
+            activated => { toggle-notif-body(!root.show-notif-body); }
         }
 
         MenuItem {
