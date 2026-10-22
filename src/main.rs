@@ -7,17 +7,19 @@
 //!
 //! - `media.rs`: memantau judul dan artis media lewat event SMTC (worker thread).
 //! - `autostart.rs`: mengatur autostart lewat registry (`HKCU\...\Run`).
-//! - `notif.rs` dan `notif_text.rs`: membaca notifikasi toast (daftar, tanpa event) dan
-//!   membersihkan serta mengelompokkannya. Belum tersambung ke UI (langkah 10c).
+//! - `notif.rs` dan `notif_text.rs`: membaca notifikasi toast (daftar, tanpa event) setiap
+//!   pill dibuka, lalu membersihkan dan mengelompokkannya. Hasilnya tampil sebagai lencana
+//!   jumlah dan tampilan notifikasi di pill (langkah 10d).
 //!
 //! Renderer dikunci ke software lewat `BackendSelector` supaya pemakaian RAM tetap kecil.
 
 use core::ffi::c_void;
 use std::rc::Rc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use slint::{ComponentHandle, PhysicalPosition, PhysicalSize, Timer, TimerMode};
+use slint::{ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, Timer, TimerMode, VecModel};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetSystemMetrics, GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SM_CXSCREEN,
@@ -28,11 +30,13 @@ slint::include_modules!();
 mod autostart;
 mod media;
 
-// Belum dipakai di build release sampai tersambung ke UI (langkah 10d).
-#[cfg_attr(not(debug_assertions), allow(dead_code))]
 mod notif;
+// `Snapshot::groups` hanya dibaca oleh `notif::debug_run` (build debug).
 #[cfg_attr(not(debug_assertions), allow(dead_code))]
 mod notif_text;
+
+use notif::Fetch;
+use notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
 
 /// Jumlah maksimum percobaan memasang style jendela. Handle jendela baru tersedia
 /// setelah event loop berjalan, jadi pemasangan perlu diulang sampai berhasil.
@@ -115,6 +119,87 @@ fn try_apply(weak: slint::Weak<MainWindow>, attempt: u32) {
     }
 }
 
+/// Penjaga agar hanya satu pembacaan notifikasi berjalan pada satu waktu.
+static NOTIF_FETCHING: AtomicBool = AtomicBool::new(false);
+
+/// Mengembalikan `NOTIF_FETCHING` ke `false` saat di-drop, termasuk bila thread pembaca
+/// panic, supaya pembacaan berikutnya tidak terkunci selamanya.
+struct NotifFetchGuard;
+
+impl Drop for NotifFetchGuard {
+    fn drop(&mut self) {
+        NOTIF_FETCHING.store(false, Ordering::Release);
+    }
+}
+
+/// Detik sejak epoch Unix untuk saat ini; 0 bila jam sistem lebih awal dari 1970.
+fn unix_now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Membaca notifikasi di thread latar (pembacaan WinRT memblokir 12-50 ms), lalu mengirim
+/// hasilnya ke UI. Dilewati bila pembacaan sebelumnya belum selesai.
+/// Isi pesan hanya dibaca bila `include_body` true (sakelar privasi).
+fn refresh_notifications(weak: slint::Weak<MainWindow>, include_body: bool) {
+    if NOTIF_FETCHING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let _guard = NotifFetchGuard;
+        let snapshot = match notif::fetch(include_body) {
+            Ok(Fetch::Ready(s)) => Some(s),
+            Ok(Fetch::NoAccess) => {
+                eprintln!("[notif] access not granted");
+                None
+            }
+            Err(e) => {
+                eprintln!("[notif] FAILED: {e}");
+                None
+            }
+        };
+        let now = ticks_from_unix_secs(unix_now_secs());
+        let _ = weak.upgrade_in_event_loop(move |ui| apply_notifications(&ui, snapshot, now));
+    });
+}
+
+/// Mengisi properti notifikasi di UI; dipanggil di thread UI. `None` (akses ditolak atau
+/// pembacaan gagal) mengosongkan daftar sehingga lencana tersembunyi.
+fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
+    let (total, rows) = match snapshot {
+        Some(s) => {
+            let rows: Vec<NotifRow> = s
+                .items
+                .iter()
+                .map(|it| {
+                    let header = if it.count > 1 {
+                        format!("{} ×{}", it.app, it.count)
+                    } else {
+                        it.app.clone()
+                    };
+                    NotifRow {
+                        header: header.into(),
+                        title: it.title.clone().into(),
+                        body: it.body.clone().into(),
+                        age: format_age(age_secs(it.time, now)).into(),
+                    }
+                })
+                .collect();
+            (s.total as i32, rows)
+        }
+        None => (0, Vec::new()),
+    };
+    let len = rows.len() as i32;
+    ui.set_notifs(ModelRc::new(VecModel::from(rows)));
+    ui.set_notif_total(total);
+    // jaga indeks tetap valid bila daftar menyusut saat sedang dilihat
+    if ui.get_notif_index() >= len {
+        ui.set_notif_index(0);
+    }
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // kunci backend winit dan renderer software (RAM idle jauh lebih kecil daripada femtovg)
     slint::BackendSelector::new()
@@ -154,6 +239,10 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.on_skip_previous(move || ctl.skip_previous());
     }
 
+    // Sakelar privasi sementara (sampai ada menu tray di langkah 10e): isi pesan hanya
+    // dibaca bila variabel lingkungan `WINISLAND_NOTIF_BODY` diset. Bawaan: tidak dibaca.
+    let include_body = std::env::var_os("WINISLAND_NOTIF_BODY").is_some();
+
     // --- hover expand/collapse
     // Saat expand, jendela membesar dulu baru konten beranimasi. Saat collapse, konten
     // mengecil dulu dan jendela baru mengecil setelah `SHRINK_DELAY_MS`.
@@ -168,6 +257,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 place(&ui, FULL_W, FULL_H); // jendela membesar dulu
                 ui.set_expanded(true); // baru konten beranimasi
                 media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
+                refresh_notifications(weak.clone(), include_body); // baca notifikasi di thread latar
             } else {
                 ui.set_expanded(false); // konten mengecil dulu
                 let weak2 = weak.clone();

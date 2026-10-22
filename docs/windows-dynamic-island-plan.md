@@ -12,13 +12,13 @@ Dokumen ini dibuat untuk dibawa ke sesi baru. Bagian 0 adalah ringkasan konteks 
 - **Prioritas:** RAM idle terkecil adalah yang utama. Metrik resmi: **private working set**, dengan commit sebagai pembanding. **Tidak ada anggaran keras** (diputuskan 21 Okt 2026: dibuat fleksibel supaya tidak perlu menghitung terus; angka 20-30 MB tidak lagi menjadi gerbang). Private working set tetap dicatat setiap kali fitur baru masuk, sebagai informasi dan pendeteksi lonjakan, bukan syarat lulus. Ukuran `.exe` sekunder dan tanpa target keras.
 - **Arah:** Rust native, Slint 1.18.1, renderer software dikunci lewat kode (`BackendSelector`), femtovg dibuang dari daftar feature, integrasi Windows lewat crate `windows` (windows-rs 0.62.2).
 - **Pengalaman:** pertama kali memakai Rust. Shell: PowerShell. Editor: VS Code. Teks UI berbahasa Inggris, komentar kode berbahasa Indonesia.
-- **Status (21 Okt 2026): langkah 0-9 selesai (9a-9d), langkah 10a, 10b (probe) dan 10c (baca, bersihkan, kelompokkan notifikasi; belum ada UI) selesai.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry. Media: judul, artis, dan status play/pause dipantau lewat **event SMTC** (satu worker thread, debounce 150 ms, dedup), dengan tiga tombol di pill (previous, play/pause, next). Notifikasi: `GetNotificationsAsync` **bisa membaca** isi notifikasi pada aplikasi unpackaged, tetapi registrasi event `NotificationChanged` **gagal** (`Element not found`, 0x80070490), jadi pola event ala media tidak bisa dipakai untuk notifikasi.
+- **Status (21 Okt 2026): langkah 0-9 selesai (9a-9d), langkah 10a, 10b (probe) dan 10c (baca, bersihkan, kelompokkan notifikasi) selesai; **10d (notifikasi di UI) kodenya disiapkan 22 Okt 2026 dan menunggu verifikasi pengguna**.** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry. Media: judul, artis, dan status play/pause dipantau lewat **event SMTC** (satu worker thread, debounce 150 ms, dedup), dengan tiga tombol di pill (previous, play/pause, next). Notifikasi: `GetNotificationsAsync` **bisa membaca** isi notifikasi pada aplikasi unpackaged, tetapi registrasi event `NotificationChanged` **gagal** (`Element not found`, 0x80070490), jadi pola event ala media tidak bisa dipakai untuk notifikasi.
 - **Angka terkini (build `dist`, setelah 9d-1):** `.exe` 7,35 MB; private working set idle 2,93 MB; commit idle 3,98 MB; working set total idle 25,42 MB; CPU idle 0%. Perkembangan private WS: baseline langkah 8 2,55 menjadi 2,77 (9a) menjadi 2,89 (9b) menjadi 2,83 (9c) menjadi 2,93 (9d-1). **9d-2 (tombol) belum diukur** (ditunda pengguna ke akhir sesi). Selisih di bawah sekitar 0,2 MB masih dalam derau satu kali ukur.
 - **Keputusan yang sudah diambil:** software renderer (2,3 MB vs 42 MB pada femtovg), femtovg dibuang, `opt-level = "z"`, profil `[profile.dist]` terpisah dari `release` (repo publik). **Dibalik di 9c (21 Okt 2026):** media dibaca lewat langganan event SMTC (worker thread permanen), bukan saat hover, karena teks tidak berubah saat lagu berganti selama pill expanded. Hover tetap mengirim `refresh()` ke worker sebagai jaring pengaman bila event terlewat. Biaya RAM terbukti dalam derau.
 - **Keputusan dan pekerjaan terbuka:**
   1. Selesai: tidak ada anggaran RAM keras, tetap dicatat sebagai informasi.
   2. Selesai: 9c dan 9d (lihat bagian "Hasil langkah 9c-9d" di bawah). Sisa: **ukur RAM 9d-2** dengan `measure.ps1` (build `dist`) dan catat di tabel.
-  3. **Langkah 10 lanjutan (notifikasi): desain diputuskan 21 Okt 2026 (disetujui pengguna lewat "lanjut").** Opsi B (baca saat expanded, tanpa event dan tanpa polling), privasi default nama aplikasi + judul tanpa isi (sakelar "tampilkan isi" di menu tray), tampilan berupa lencana jumlah yang beralih antara media dan daftar notifikasi. **10c selesai** (`notif.rs`, `notif_text.rs`). Sisa: **10d** sambungkan ke UI (properti Slint, lencana, sakelar tampilan; judul yang sama dengan nama aplikasi dikosongkan sebelum dedup), **10e** sakelar privasi di menu tray (disimpan di registry seperti autostart), lalu ukur RAM.
+  3. **Langkah 10 lanjutan (notifikasi): desain diputuskan 21 Okt 2026 (disetujui pengguna lewat "lanjut").** Opsi B (baca saat expanded, tanpa event dan tanpa polling), privasi default nama aplikasi + judul tanpa isi (sakelar "tampilkan isi" di menu tray), tampilan berupa lencana jumlah yang beralih antara media dan daftar notifikasi. **10c selesai** (`notif.rs`, `notif_text.rs`). Sisa: **10d** (kode disiapkan 22 Okt 2026, menunggu verifikasi) sambungkan ke UI (properti Slint, lencana, sakelar tampilan; judul yang sama dengan nama aplikasi dikosongkan sebelum dedup), **10e** sakelar privasi di menu tray (disimpan di registry seperti autostart), lalu ukur RAM.
   4. Selesai: lisensi (opsi B) dan dokumen repo, commit `b2bdb01`. Sisa: cek lisensi transitif dengan `cargo-deny` atau `cargo-license` sebelum rilis.
   5. Tes `drop-shadow-*` pada software renderer belum dilakukan (dokumentasi menyebut belum didukung).
   6. Belum diuji: judul non-Latin (Jepang, Korea, emoji) di pill, pemutar yang melaporkan judul kosong, monitor kedua dan DPI, game fullscreen eksklusif, rendering emoji di software renderer (relevan untuk notifikasi).
@@ -345,6 +345,7 @@ Setiap langkah berjalan dengan urutan yang sama, dan dokumen ini diperbarui di a
 | 8 | Pengukuran RAM, CPU, ukuran `.exe` lengkap (bagian 2) pada bentuk aplikasi yang sudah baru | Selesai: femtovg dibuang, profil `dist` diterapkan, build `dist` lulus checklist (tray, hover, autostart, quit). `.exe` 7,3 MB, private working set sekitar 2,6 MB, CPU idle 0% |
 | 9 | Kontrol media via SMTC (windows-rs), dipecah: 9a baca judul/artis ke konsol, 9b tampil di overlay, 9c pembaruan otomatis, 9d kontrol (9d-1 ikon status, 9d-2 tombol) | Selesai: 9a, 9b, 9c (event SMTC + worker), 9d-1 (ikon play/pause), 9d-2 (tombol previous, play/pause, next) lolos uji (laporan pengguna). RAM 9d-2 belum diukur |
 | 10 | Notifikasi lewat `UserNotificationListener` pada aplikasi unpackaged | 10a selesai: `Allowed`. 10b selesai: **membaca daftar dan isi berhasil, registrasi `NotificationChanged` gagal** (0x80070490). Desain tampilan dan opsi pembacaan menunggu keputusan **10c selesai:** `notif.rs` (baca daftar, tanpa event) dan `notif_text.rs` (pembersihan, pengurutan, dedup; 13 tes lolos), terhubung ke konsol lewat `debug_run`. Belum ada UI |
+| 10d | Notifikasi di UI: lencana jumlah, tampilan notifikasi yang menggantikan tampilan media, judul redundan dikosongkan | Kode disiapkan 22 Okt 2026 (`main.rs`, `main.slint`, `notif_text.rs`). Sintaks Slint lolos kompilasi di sandbox; Rust belum dikompilasi di mana pun. Menunggu `cargo check`, `cargo test` (17 tes), dan uji interaktif pengguna |
 | 11 | Lisensi dan dokumen repo (MIT + atribusi Slint Royalty-free 2.0): `LICENSE`, `README.md`, `CONTRIBUTING.md`, field `license` di `Cargo.toml` | Selesai: commit `b2bdb01` |
 
 ### Status temuan spike
@@ -702,6 +703,38 @@ Hasil (laporan pengguna, Windows, build debug):
 - Waktu baca adalah waktu dinding untuk 1 notifikasi. Biaya untuk daftar besar (puluhan notifikasi, tiap notifikasi memicu beberapa panggilan lintas proses) dan biaya CPU belum diukur; ini masukan untuk keputusan B+ bila diangkat lagi.
 
 **Temuan desain:** judul notifikasi sering sama dengan nama aplikasi (Antigravity: judul "Antigravity", informasi ada di isi), sedangkan aplikasi lain memakai judul informatif (Hermes, Snipping Tool) atau nama obrolan (WhatsApp). Keputusan: bila judul sama dengan nama aplikasi, tampilkan sekali saja (kosongkan judul sebelum dedup); isi tetap hanya lewat sakelar privasi. Opsi menampilkan isi otomatis untuk aplikasi tertentu ditolak karena privasinya bergantung pada kebetulan nama aplikasi.
+
+### Hasil langkah 10d (22 Okt 2026)
+
+**Status:** kode disiapkan oleh Claude, **belum diverifikasi pengguna**. Sandbox Claude tidak punya Rust untuk target Windows, jadi kode Rust tidak pernah dikompilasi. Satu-satunya verifikasi mesin: berkas `ui/main.slint` lolos kompilasi dengan paket Python `slint` 1.18.1b1 (versi pustaka Slint pengguna 1.18.1) dan berkas yang sengaja dirusak ditolak, jadi pengecekan itu bermakna. Perilaku (hover, klik, tata letak) tidak bisa dijalankan tanpa layar, jadi belum teramati.
+
+**Yang berubah:**
+
+- `src/notif_text.rs`: `group()` mengosongkan judul yang sama dengan nama aplikasi (`eq_ignore_ascii_case`, setelah `clean`) **sebelum** penggabungan; fungsi baru `format_age()` ("just now", "N min ago", "N h ago", "N d ago"); 4 tes baru (total 17).
+- `src/main.rs`: `refresh_notifications()` membaca di thread latar setiap pill dibuka (opsi B, tanpa event dan tanpa polling), dengan penjaga `NOTIF_FETCHING` berbentuk RAII (`NotifFetchGuard`) supaya flag tidak macet bila thread panic; `apply_notifications()` mengisi properti UI di thread UI. Isi pesan hanya dibaca bila variabel lingkungan `WINISLAND_NOTIF_BODY` diset (sakelar sementara sampai 10e).
+- `ui/main.slint`: struct `NotifRow` (header, title, body, age; semuanya teks siap tampil), komponen `CountBadge`, properti `notif-total`, `notifs`, `notif-index`, `show-notifs`, tampilan notifikasi yang menggantikan tampilan media (tinggi pill tetap 116 px, jendela tetap 360x124), `changed expanded` yang mengembalikan ke tampilan media dan item pertama setiap pill dibuka.
+
+**Keputusan desain dan alasan:**
+
+| Keputusan | Alasan | Risiko / catatan |
+| --- | --- | --- |
+| Daftar dan indeks disimpan di model Slint, navigasi dilakukan di Slint | Penutup untuk `upgrade_in_event_loop` harus `Send`, sehingga status `Rc`/`RefCell` di Rust tidak bisa dibawa masuk | Aritmetika indeks ada di Slint; sintaks interpolasi `"\{...}"` sudah lolos kompilasi |
+| Klik kartu berpindah ke item berikutnya (berputar), posisi tampil sebagai "1/3" | Tanpa tombol navigasi tambahan: tinggi 116 px sempit, ikon prev/next menambah elemen dan tabrakan tata letak | Penemuan fitur rendah; bila terasa kurang, tambah tombol di langkah berikutnya |
+| Lencana merah di kanan bawah, berpindah media/notifikasi; putih saat tampilan notifikasi aktif | Area kanan bawah kosong di tampilan media (tombol berada di tengah) dan tampilan notifikasi diberi `padding-right: 56px` | **Angka tata letak adalah perkiraan awal**, belum pernah dirender oleh Claude. Kemungkinan perlu disetel secara visual |
+| Lencana menampilkan `Snapshot::total` (notifikasi mentah di Action Center), daftar menampilkan maksimal 5 kelompok | Sesuai handoff ("angka total notifikasi aktif") | Angka lencana bisa lebih besar dari jumlah item yang bisa digulir |
+| Bila akses ditolak atau pembacaan gagal: daftar dikosongkan, lencana hilang, hanya log konsol | Sederhana | Pengguna tidak diberi tahu bahwa akses dimatikan. Kandidat perbaikan di 10e |
+| Bawaan tampilan awal selalu media | Sederhana dan konsisten | Bila tidak ada media tetapi ada notifikasi, pengguna harus mengklik lencana |
+
+**Checklist verifikasi (untuk pengguna):**
+
+1. `cargo fmt` lalu `cargo check` bersih; `cargo test` melaporkan 17 tes lolos.
+2. Hover: pill terbuka mulus seperti sebelumnya; saat ada notifikasi di Action Center, lencana angka muncul dalam sekitar 50 ms.
+3. Klik lencana: tampilan beralih media ke notifikasi dan kembali; tombol media tetap bekerja di tampilan media.
+4. Tampilan notifikasi: nama aplikasi, judul (tanpa isi), umur; "Antigravity" tidak tampil sebagai "Antigravity | Antigravity".
+5. Klik kartu berpindah item; indeks "n/m" tampil bila lebih dari satu item.
+6. Pill ditutup lalu dibuka lagi: kembali ke tampilan media.
+7. Tanpa `WINISLAND_NOTIF_BODY` isi tidak tampil; dengan variabel itu isi tampil.
+8. Ukur RAM (`measure.ps1`, build `dist`) dan catat di tabel.
 
 ### Riwayat commit
 

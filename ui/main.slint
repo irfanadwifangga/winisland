@@ -97,6 +97,46 @@ component ControlButton inherits Rectangle {
     }
 }
 
+// Satu baris notifikasi untuk ditampilkan di pill. Semua field sudah berupa teks siap
+// tampil (disusun di Rust), jadi Slint tidak perlu memformat apa pun.
+export struct NotifRow {
+    // nama aplikasi, ditambah jumlah bila beberapa notifikasi digabung (mis. "WhatsApp ×3")
+    header: string,
+    // kosong bila judul sama dengan nama aplikasi
+    title: string,
+    // kosong bila sakelar privasi "tampilkan isi" mati (bawaan)
+    body: string,
+    // umur notifikasi, mis. "2 min ago"
+    age: string,
+}
+
+// Lencana jumlah notifikasi. Merah saat tampilan media aktif, putih saat tampilan
+// notifikasi aktif. Klik pada lencana berpindah antara kedua tampilan.
+component CountBadge inherits Rectangle {
+    callback clicked();
+
+    in property <int> count;
+    in property <bool> active;
+
+    width: 34px;
+    height: 24px;
+    border-radius: 12px;
+    background: root.active ? white : #d64545;
+
+    Text {
+        text: root.count > 99 ? "99+" : "\{root.count}";
+        color: root.active ? black : white;
+        font-size: 12px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 export component MainWindow inherits Window {
     no-frame: true;
     always-on-top: true;
@@ -111,6 +151,17 @@ export component MainWindow inherits Window {
     in-out property <bool> has-media: false;
     // true bila sedang diputar (tombol menampilkan pause), false bila dijeda (menampilkan play)
     in-out property <bool> playing: false;
+
+    // --- notifikasi (diisi dari Rust setiap pill dibuka)
+    // jumlah notifikasi mentah di Action Center (sebelum pengelompokan); 0 menyembunyikan lencana
+    in-out property <int> notif-total: 0;
+    // kelompok notifikasi terbaru (paling banyak 5)
+    in-out property <[NotifRow]> notifs: [];
+    // indeks kelompok yang sedang tampil
+    in-out property <int> notif-index: 0;
+    // true: pill menampilkan notifikasi; false: menampilkan media
+    in-out property <bool> show-notifs: false;
+
     callback hover-changed(bool);
     callback play-pause();
     callback skip-next();
@@ -118,6 +169,14 @@ export component MainWindow inherits Window {
 
     property <bool> hovered: area.has-hover;
     changed hovered => { root.hover-changed(root.hovered); }
+
+    // Setiap kali pill dibuka, mulai dari tampilan media dan item pertama.
+    changed expanded => {
+        if (root.expanded) {
+            root.show-notifs = false;
+            root.notif-index = 0;
+        }
+    }
 
     area := TouchArea {
         Rectangle {
@@ -134,7 +193,8 @@ export component MainWindow inherits Window {
                 easing: ease-out;
             }
 
-            VerticalLayout {
+            // --- tampilan media
+            if !root.show-notifs: VerticalLayout {
                 padding: 16px;
                 spacing: 4px;
                 alignment: center;
@@ -202,6 +262,96 @@ export component MainWindow inherits Window {
                         }
                     }
                 }
+            }
+
+            // --- tampilan notifikasi (menggantikan tampilan media; tinggi pill tetap)
+            // Klik di kartu berpindah ke kelompok berikutnya (berputar).
+            if root.show-notifs: Rectangle {
+                VerticalLayout {
+                    padding-left: 20px;
+                    // ruang untuk lencana di kanan bawah
+                    padding-right: 56px;
+                    padding-top: 12px;
+                    padding-bottom: 12px;
+                    spacing: 3px;
+                    alignment: center;
+
+                    if root.notifs.length == 0: Text {
+                        text: "No notifications";
+                        color: #b0b0b0;
+                        font-size: 14px;
+                        overflow: elide;
+                        visible: root.expanded;
+                    }
+
+                    // baris atas: aplikasi, umur, dan posisi item bila lebih dari satu
+                    if root.notifs.length > 0: HorizontalLayout {
+                        spacing: 8px;
+
+                        Text {
+                            text: root.notifs[root.notif-index].header;
+                            color: #b0b0b0;
+                            font-size: 12px;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                            visible: root.expanded;
+                        }
+
+                        Text {
+                            text: root.notifs[root.notif-index].age;
+                            color: #b0b0b0;
+                            font-size: 12px;
+                            horizontal-alignment: right;
+                            visible: root.expanded;
+                        }
+
+                        Text {
+                            text: root.notifs.length > 1 ? "\{root.notif-index + 1}/\{root.notifs.length}" : "";
+                            color: #b0b0b0;
+                            font-size: 12px;
+                            horizontal-alignment: right;
+                            visible: root.expanded;
+                        }
+                    }
+
+                    if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
+                        text: root.notifs[root.notif-index].title;
+                        color: white;
+                        font-size: 14px;
+                        font-weight: 700;
+                        overflow: elide;
+                        visible: root.expanded;
+                    }
+
+                    if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
+                        text: root.notifs[root.notif-index].body;
+                        color: #b0b0b0;
+                        font-size: 12px;
+                        overflow: elide;
+                        visible: root.expanded;
+                    }
+                }
+
+                // di atas teks supaya klik selalu sampai ke TouchArea
+                TouchArea {
+                    clicked => {
+                        if (root.notif-index + 1 >= root.notifs.length) {
+                            root.notif-index = 0;
+                        } else {
+                            root.notif-index += 1;
+                        }
+                    }
+                }
+            }
+
+            // lencana di kanan bawah, di atas kedua tampilan (urutan paling akhir = paling atas)
+            CountBadge {
+                x: parent.width - self.width - 16px;
+                y: parent.height - self.height - 20px;
+                count: root.notif-total;
+                active: root.show-notifs;
+                visible: root.expanded && root.notif-total > 0;
+                clicked => { root.show-notifs = !root.show-notifs; }
             }
         }
     }

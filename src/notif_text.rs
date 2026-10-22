@@ -101,6 +101,10 @@ pub fn clean(s: &str, max_chars: usize) -> String {
 /// Mengurutkan (terbaru dulu), membersihkan, dan menggabungkan notifikasi yang
 /// tampil sama.
 ///
+/// Judul yang sama dengan nama aplikasi (tanpa membedakan huruf besar/kecil ASCII)
+/// tidak menambah informasi, jadi dikosongkan SEBELUM penggabungan. Tanpa aturan ini
+/// tampilan menjadi "Antigravity | Antigravity".
+///
 /// Kunci penggabungan adalah apa yang benar-benar ditampilkan: (aplikasi, judul)
 /// bila isi disembunyikan, (aplikasi, judul, isi) bila isi ditampilkan. Dengan isi
 /// disembunyikan, beberapa pesan dari pengirim yang sama menjadi satu baris
@@ -116,7 +120,11 @@ pub fn group(mut raw: Vec<RawNotif>, include_body: bool, max_items: usize) -> Sn
         if app.is_empty() {
             app = "Unknown app".to_string();
         }
-        let title = clean(&r.title, TITLE_MAX);
+        let mut title = clean(&r.title, TITLE_MAX);
+        // judul yang sama dengan nama aplikasi tidak menambah informasi: kosongkan
+        if title.eq_ignore_ascii_case(&app) {
+            title.clear();
+        }
         let body = if include_body {
             clean(&r.body, BODY_MAX)
         } else {
@@ -157,6 +165,17 @@ pub fn ticks_from_unix_secs(secs: i64) -> i64 {
 /// Umur notifikasi dalam detik; tidak pernah negatif.
 pub fn age_secs(time: i64, now_ticks: i64) -> i64 {
     (now_ticks.saturating_sub(time) / TICKS_PER_SEC).max(0)
+}
+
+/// Umur dalam teks singkat untuk UI: "just now", "5 min ago", "3 h ago", "2 d ago".
+/// Nilai negatif diperlakukan sebagai 0.
+pub fn format_age(secs: i64) -> String {
+    match secs.max(0) {
+        0..=59 => "just now".to_string(),
+        s @ 60..=3599 => format!("{} min ago", s / 60),
+        s @ 3600..=86_399 => format!("{} h ago", s / 3600),
+        s => format!("{} d ago", s / 86_400),
+    }
 }
 
 #[cfg(test)]
@@ -288,5 +307,47 @@ mod tests {
     #[test]
     fn ticks_match_known_unix_epoch_offset() {
         assert_eq!(ticks_from_unix_secs(0), 116_444_736_000_000_000);
+    }
+
+    #[test]
+    fn group_blanks_title_equal_to_app_name() {
+        let s = group(vec![raw("Antigravity", "Antigravity", "isi", 1)], false, 5);
+        assert_eq!(s.items[0].app, "Antigravity");
+        assert_eq!(s.items[0].title, "");
+    }
+
+    #[test]
+    fn group_blanks_title_ignoring_ascii_case_and_merges_after_blanking() {
+        let s = group(
+            vec![
+                raw("Antigravity", "Antigravity", "", 10),
+                raw("Antigravity", "antigravity", "", 20),
+                raw("Antigravity", "  ANTIGRAVITY \n", "", 30),
+            ],
+            false,
+            5,
+        );
+        assert_eq!(s.items.len(), 1);
+        assert_eq!(s.items[0].count, 3);
+        assert_eq!(s.items[0].title, "");
+    }
+
+    #[test]
+    fn group_keeps_title_when_it_differs_from_app_name() {
+        let s = group(vec![raw("WhatsApp", "Budi", "", 1)], false, 5);
+        assert_eq!(s.items[0].title, "Budi");
+    }
+
+    #[test]
+    fn format_age_picks_the_right_unit() {
+        assert_eq!(format_age(-5), "just now");
+        assert_eq!(format_age(0), "just now");
+        assert_eq!(format_age(59), "just now");
+        assert_eq!(format_age(60), "1 min ago");
+        assert_eq!(format_age(3_599), "59 min ago");
+        assert_eq!(format_age(3_600), "1 h ago");
+        assert_eq!(format_age(86_399), "23 h ago");
+        assert_eq!(format_age(86_400), "1 d ago");
+        assert_eq!(format_age(3 * 86_400 + 5), "3 d ago");
     }
 }
