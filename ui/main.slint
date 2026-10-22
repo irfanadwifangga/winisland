@@ -139,6 +139,16 @@ export struct NotifRow {
     age: string,
 }
 
+// Satu sel pada grid kalender (42 sel = 6 baris x 7 kolom).
+export struct CalendarCell {
+    // teks tanggal untuk ditampilkan (mis. "22")
+    text: string,
+    // true jika sel berada dalam bulan yang sedang dilihat
+    is-current-month: bool,
+    // true jika sel adalah hari ini
+    is-today: bool,
+}
+
 export component MainWindow inherits Window {
     default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
     no-frame: true;
@@ -185,6 +195,15 @@ export component MainWindow inherits Window {
     // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
     in-out property <int> active-tab: 0;
 
+    // --- kalender (Langkah 14, diisi dari Rust)
+    // judul bulan, mis. "October 2026"
+    in-out property <string> cal-title: "October 2026";
+    // 42 sel grid kalender
+    in-out property <[CalendarCell]> cal-cells: [];
+    callback cal-prev();
+    callback cal-next();
+    callback cal-today();
+
     // Dimensi target pill saat peek atau expanded sesuai tab aktif dan konten
     property <length> target-pill-w:
         root.expanded ? (
@@ -197,7 +216,7 @@ export component MainWindow inherits Window {
     property <length> target-pill-h:
         root.expanded ? (
             root.active-tab == 0 ? (root.show-notifs ? 135px : (root.has-media ? 165px : 120px)) :
-            root.active-tab == 1 ? 180px :
+            root.active-tab == 1 ? 260px :
             root.active-tab == 2 ? 140px :
             140px
         ) : (root.peek ? 32px : 4px);
@@ -709,23 +728,142 @@ export component MainWindow inherits Window {
             if root.expanded && root.active-tab == 1: VerticalLayout {
                 y: 32px;
                 height: parent.height - 32px;
-                alignment: center;
-                spacing: 6px;
-                padding: 16px;
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 4px;
 
-                Text {
-                    text: "Calendar";
-                    color: white;
-                    font-size: 16px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
+                // Baris navigasi bulan: [<] October 2026 [>] dan tombol Today
+                HorizontalLayout {
+                    alignment: space-between;
+                    height: 22px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        // Tombol bulan sebelumnya
+                        Rectangle {
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 6px;
+                            background: prev_touch.has-hover ? #2a2a2a : transparent;
+
+                            Text {
+                                text: "◀";
+                                color: prev_touch.has-hover ? white : #a1a1aa;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            prev_touch := TouchArea {
+                                clicked => { root.cal-prev(); }
+                            }
+                        }
+
+                        // Judul bulan
+                        Text {
+                            text: root.cal-title;
+                            color: white;
+                            font-size: 13px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+
+                        // Tombol bulan berikutnya
+                        Rectangle {
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 6px;
+                            background: next_touch.has-hover ? #2a2a2a : transparent;
+
+                            Text {
+                                text: "▶";
+                                color: next_touch.has-hover ? white : #a1a1aa;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            next_touch := TouchArea {
+                                clicked => { root.cal-next(); }
+                            }
+                        }
+                    }
+
+                    // Tombol kembali ke hari ini
+                    Rectangle {
+                        height: 22px;
+                        border-radius: 6px;
+                        background: today_touch.has-hover ? #2a2a2a : #1c1c1e;
+
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: center;
+                            Text {
+                                text: "Today";
+                                color: today_touch.has-hover ? white : #60a5fa;
+                                font-size: 11px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        today_touch := TouchArea {
+                            clicked => { root.cal-today(); }
+                        }
+                    }
                 }
 
-                Text {
-                    text: "Month grid arriving in Step 14";
-                    color: #888888;
-                    font-size: 12px;
-                    horizontal-alignment: center;
+                // Header hari: S M T W T F S
+                HorizontalLayout {
+                    height: 18px;
+
+                    for day-label in ["S", "M", "T", "W", "T", "F", "S"]: Rectangle {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: day-label;
+                            color: day-label == "S" ? #ef4444 : #71717a;
+                            font-size: 10px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Grid 6 baris x 7 kolom
+                for row in 6: HorizontalLayout {
+                    height: 28px;
+
+                    for col in 7: Rectangle {
+                        horizontal-stretch: 1;
+                        property <int> idx: row * 7 + col;
+                        property <bool> valid: root.cal-cells.length > idx;
+                        property <bool> cur: valid ? root.cal-cells[idx].is-current-month : false;
+                        property <bool> today: valid ? root.cal-cells[idx].is-today : false;
+
+                        Rectangle {
+                            width: 24px;
+                            height: 24px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 12px;
+                            background: today ? #3b82f6 : transparent;
+
+                            Text {
+                                text: valid ? root.cal-cells[idx].text : "";
+                                color: today ? white : (cur ? #e4e4e7 : #52525b);
+                                font-size: 12px;
+                                font-weight: today ? 700 : (cur ? 500 : 400);
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
                 }
             }
 
