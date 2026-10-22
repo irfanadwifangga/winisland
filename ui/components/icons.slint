@@ -80,3 +80,57 @@ export component PrevIcon inherits Rectangle {
         background: root.icon-color;
     }
 }
+
+// Ikon speaker audio dengan status suara / mute.
+export component SpeakerIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    in property <bool> muted: false;
+    width: 14px;
+    height: 14px;
+
+    // Kotak belakang speaker
+    Rectangle {
+        x: 0px;
+        y: (parent.height - 6px) / 2;
+        width: 3px;
+        height: 6px;
+        background: root.icon-color;
+    }
+
+    // Kerucut speaker
+    for i in 4: Rectangle {
+        x: 3px + i * 1px;
+        width: 1px;
+        height: 6px + i * 2px;
+        y: (parent.height - self.height) / 2;
+        background: root.icon-color;
+    }
+
+    // Gelombang suara (bila tidak mute)
+    if !root.muted: Rectangle {
+        x: 9px;
+        y: (parent.height - 8px) / 2;
+        width: 1.5px;
+        height: 8px;
+        border-radius: 0.75px;
+        background: root.icon-color;
+    }
+
+    if !root.muted: Rectangle {
+        x: 12px;
+        y: (parent.height - 12px) / 2;
+        width: 1.5px;
+        height: 12px;
+        border-radius: 0.75px;
+        background: root.icon-color;
+    }
+
+    // Garis mute (bila mute)
+    if root.muted: Rectangle {
+        x: 9px;
+        y: (parent.height - 10px) / 2;
+        width: 2px;
+        height: 10px;
+        background: #f87171;
+    }
+}

@@ -8,3 +8,4 @@ pub mod notif_text;
 pub mod stats;
 pub mod tasks;
 pub mod timer;
+pub mod volume;

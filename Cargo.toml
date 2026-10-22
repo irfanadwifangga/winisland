@@ -19,6 +19,11 @@ windows = { version = "0.62.2", features = [
     "Win32_System_SystemInformation",
     "Win32_System_Power",
     "Win32_System_Performance",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
     "Media_Control",
     "Foundation",
     "UI_Notifications_Management",
@@ -26,6 +31,7 @@ windows = { version = "0.62.2", features = [
     "Foundation_Collections",
 ] }
 winreg = "0.56.0"
+windows-core = "0.62.2"
 
 [build-dependencies]
 slint-build = "1.18.1"

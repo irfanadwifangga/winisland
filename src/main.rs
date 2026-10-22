@@ -18,7 +18,8 @@
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -37,7 +38,7 @@ mod plugins;
 use core::{autostart, config, fullscreen, monitor};
 use plugins::notif::Fetch;
 use plugins::notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
-use plugins::{calendar, gpu, media, notif, stats, tasks, timer};
+use plugins::{calendar, gpu, media, notif, stats, tasks, timer, volume};
 
 /// Jumlah maksimum percobaan memasang style jendela. Handle jendela baru tersedia
 /// setelah event loop berjalan, jadi pemasangan perlu diulang sampai berhasil.
@@ -51,6 +52,8 @@ pub const MIN_WINDOW_W: f32 = 140.0;
 pub const MIN_WINDOW_H: f32 = 4.0;
 pub const PEEK_WINDOW_W: f32 = 175.0;
 pub const PEEK_WINDOW_H: f32 = 40.0;
+pub const VOLUME_OSD_WINDOW_W: f32 = 220.0;
+pub const VOLUME_OSD_WINDOW_H: f32 = 44.0;
 pub const MAX_EXPANDED_W: f32 = 480.0;
 pub const MAX_EXPANDED_H: f32 = 300.0;
 
@@ -101,6 +104,8 @@ pub fn clamp_window_size(requested_w: f32, requested_h: f32) -> (f32, f32) {
 fn current_window_size(ui: &MainWindow) -> (f32, f32) {
     if ui.get_expanded() {
         clamp_window_size(ui.get_requested_width(), ui.get_requested_height())
+    } else if ui.get_show_volume_osd() {
+        (VOLUME_OSD_WINDOW_W, VOLUME_OSD_WINDOW_H)
     } else if ui.get_peek() {
         (PEEK_WINDOW_W, PEEK_WINDOW_H)
     } else {
@@ -360,6 +365,12 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.show()?;
 
+    // Inisialisasi status volume audio master sistem
+    if let Ok(v) = volume::get_master_volume() {
+        ui.set_volume_level(v.level as i32);
+        ui.set_volume_muted(v.muted);
+    }
+
     // --- media: langganan event SMTC lewat worker thread
     // `media_ctl` meminta worker membaca ulang (saat hover, sebagai jaring pengaman)
     // dan mengirim perintah tombol.
@@ -406,6 +417,50 @@ fn main() -> Result<(), slint::PlatformError> {
     let clock_timer = Rc::new(Timer::default());
     let cpu_tracker = Rc::new(RefCell::new(stats::CpuTracker::new()));
     let gpu_tracker = Rc::new(RefCell::new(gpu::GpuTracker::new()));
+
+    // --- watcher volume master sistem (0% CPU idle, event-driven) ---
+    let volume_seq = Arc::new(AtomicU64::new(0));
+    let volume_weak = ui.as_weak();
+    let volume_seq_watcher = volume_seq.clone();
+
+    let _volume_watcher = match volume::VolumeWatcher::start(move |state| {
+        let weak = volume_weak.clone();
+        let seq = volume_seq_watcher.clone();
+        let this_seq = seq.fetch_add(1, Ordering::SeqCst) + 1;
+
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            ui.set_volume_level(state.level as i32);
+            ui.set_volume_muted(state.muted);
+
+            // Tampilkan popup OSD hanya jika Dynamic Island tidak sedang expanded
+            if !ui.get_expanded() {
+                ui.set_show_volume_osd(true);
+                place(&ui, VOLUME_OSD_WINDOW_W, VOLUME_OSD_WINDOW_H);
+
+                // Auto-hide popup OSD setelah 2 detik
+                let weak_timer = ui.as_weak();
+                let seq_check = seq.clone();
+                Timer::single_shot(Duration::from_secs(2), move || {
+                    if seq_check.load(Ordering::SeqCst) == this_seq {
+                        if let Some(ui) = weak_timer.upgrade() {
+                            ui.set_show_volume_osd(false);
+                            if !ui.get_expanded() && !ui.get_peek() {
+                                place(&ui, MIN_WINDOW_W, MIN_WINDOW_H);
+                            } else if ui.get_peek() && !ui.get_expanded() {
+                                place(&ui, PEEK_WINDOW_W, PEEK_WINDOW_H);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }) {
+        Ok(w) => Some(w),
+        Err(e) => {
+            eprintln!("[volume] Gagal memulai watcher volume audio: {e}");
+            None
+        }
+    };
     {
         let weak = ui.as_weak();
         let shrink_t = shrink_timer.clone();
@@ -452,6 +507,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 // Kursor keluar: collapse ke Idle
                 ui.set_expanded(false);
                 ui.set_peek(false);
+                ui.set_show_volume_osd(false);
                 clock_t.stop(); // matikan timer jam saat idle (0% CPU idle)
                 sw_tick_hover.stop(); // matikan tick stopwatch saat idle (0% CPU idle)
                 cpu_tracker_exit.borrow_mut().reset(); // reset delta CPU tracker
@@ -479,6 +535,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let gpu_tracker_expand = gpu_tracker.clone();
         ui.on_expand_clicked(move || {
             let Some(ui) = weak.upgrade() else { return };
+            ui.set_show_volume_osd(false);
             ui.set_expanded(true);
             let (w, h) = current_window_size(&ui);
             place(&ui, w, h);

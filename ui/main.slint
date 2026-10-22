@@ -1,4 +1,4 @@
-import { PlayIcon } from "components/icons.slint";
+import { PlayIcon, SpeakerIcon } from "components/icons.slint";
 import { TabItem } from "components/buttons.slint";
 import { NotifRow, CalendarCell, TaskRow } from "models.slint";
 import { TasksView } from "views/tasks_view.slint";
@@ -82,7 +82,12 @@ export component MainWindow inherits Window {
     callback stopwatch-pause();
     callback stopwatch-reset();
 
-        // --- tasks (Langkah 17) ---
+            // --- volume OSD (Adopsi WinIsland) ---
+    in-out property <bool> show-volume-osd: false;
+    in-out property <int> volume-level: 50;
+    in-out property <bool> volume-muted: false;
+
+    // --- tasks (Langkah 17) ---
     in-out property <[TaskRow]> tasks: [];
     in-out property <int> tasks-remaining: 0;
     in-out property <int> tasks-completed: 0;
@@ -103,7 +108,7 @@ export component MainWindow inherits Window {
             root.active-tab == 1 ? 380px :
             root.active-tab == 2 ? 360px :
             360px
-        ) : (root.peek ? 175px : 140px);
+        ) : (root.show-volume-osd ? 220px : (root.peek ? 175px : 140px));
 
     property <length> target-pill-h:
         root.expanded ? (
@@ -113,12 +118,12 @@ export component MainWindow inherits Window {
             root.active-tab == 1 ? 260px :
             root.active-tab == 2 ? 185px :
             240px
-        ) : (root.peek ? 32px : 4px);
+        ) : (root.show-volume-osd ? 36px : (root.peek ? 32px : 4px));
 
     // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
     // Saat peek atau expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
     out property <length> requested-width: root.target-pill-w;
-    out property <length> requested-height: (root.expanded || root.peek) ? (root.target-pill-h + 8px) : 4px;
+    out property <length> requested-height: (root.expanded || root.peek || root.show-volume-osd) ? (root.target-pill-h + 8px) : 4px;
 
     callback hover-changed(bool);
     callback expand-clicked();
@@ -164,7 +169,7 @@ export component MainWindow inherits Window {
     area := TouchArea {
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: (root.expanded || root.peek) ? 8px : 0px;
+            y: (root.expanded || root.peek || root.show-volume-osd) ? 8px : 0px;
             width: root.target-pill-w;
             height: root.target-pill-h;
             border-radius: min(self.height / 2, 28px);
@@ -176,8 +181,67 @@ export component MainWindow inherits Window {
                 easing: ease-out;
             }
 
+            // --- mode Volume OSD (popup saat volume sistem berubah) ---
+            if root.show-volume-osd && !root.expanded: Rectangle {
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    alignment: space-between;
+                    spacing: 10px;
+
+                    // Ikon speaker audio
+                    Rectangle {
+                        width: 14px;
+                        height: 14px;
+                        y: (parent.height - self.height) / 2;
+                        SpeakerIcon {
+                            icon-color: root.volume-muted ? #9ca3af : white;
+                            muted: root.volume-muted;
+                            width: 14px;
+                            height: 14px;
+                        }
+                    }
+
+                    // Bar indikator level volume
+                    Rectangle {
+                        height: 6px;
+                        border-radius: 3px;
+                        background: #374151;
+                        horizontal-stretch: 1;
+                        y: (parent.height - self.height) / 2;
+                        clip: true;
+
+                        Rectangle {
+                            x: 0px;
+                            width: parent.width * max(0, min(100, root.volume-level)) / 100;
+                            height: parent.height;
+                            border-radius: 3px;
+                            background: root.volume-muted ? #6b7280 : #3b82f6;
+                        }
+                    }
+
+                    // Teks persentase volume
+                    Text {
+                        text: root.volume-muted ? "Mute" : "\{root.volume-level}%";
+                        color: root.volume-muted ? #9ca3af : white;
+                        font-size: 12px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Klik pill volume untuk langsung expand ke Island
+                TouchArea {
+                    clicked => {
+                        root.expanded = true;
+                        root.show-volume-osd = false;
+                        root.expand-clicked();
+                    }
+                }
+            }
+
             // --- mode Peek (hover, belum diklik): tampilkan jam dan indikator ringkas ---
-            if root.peek && !root.expanded: Rectangle {
+            if root.peek && !root.expanded && !root.show-volume-osd: Rectangle {
                 HorizontalLayout {
                     alignment: center;
                     spacing: 10px;
