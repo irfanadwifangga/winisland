@@ -54,8 +54,8 @@ const RETRY_MS: u64 = 50;
 /// Nilai aktual per state ditentukan oleh Slint sebagai sumber kebenaran (Langkah 12).
 pub const MIN_WINDOW_W: f32 = 140.0;
 pub const MIN_WINDOW_H: f32 = 4.0;
-pub const PEEK_WINDOW_W: f32 = 150.0;
-pub const PEEK_WINDOW_H: f32 = 34.0;
+pub const PEEK_WINDOW_W: f32 = 175.0;
+pub const PEEK_WINDOW_H: f32 = 40.0;
 pub const MAX_EXPANDED_W: f32 = 480.0;
 pub const MAX_EXPANDED_H: f32 = 300.0;
 

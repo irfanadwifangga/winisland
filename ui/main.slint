@@ -167,6 +167,7 @@ component CountBadge inherits Rectangle {
 }
 
 export component MainWindow inherits Window {
+    default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
     no-frame: true;
     always-on-top: true;
     background: transparent;
@@ -209,7 +210,7 @@ export component MainWindow inherits Window {
             root.active-tab == 1 ? 380px :
             root.active-tab == 2 ? 360px :
             360px
-        ) : (root.peek ? 150px : 140px);
+        ) : (root.peek ? 175px : 140px);
 
     property <length> target-pill-h:
         root.expanded ? (
@@ -217,7 +218,7 @@ export component MainWindow inherits Window {
             root.active-tab == 1 ? 180px :
             root.active-tab == 2 ? 140px :
             140px
-        ) : (root.peek ? 26px : 4px);
+        ) : (root.peek ? 32px : 4px);
 
     // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
     // Saat peek atau expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
@@ -274,33 +275,33 @@ export component MainWindow inherits Window {
             if root.peek && !root.expanded: Rectangle {
                 HorizontalLayout {
                     alignment: center;
-                    spacing: 8px;
+                    spacing: 10px;
 
                     // ikon musik kecil bila sedang memutar lagu
                     if root.has-media && root.playing: Rectangle {
-                        width: 8px;
-                        height: 10px;
+                        width: 9px;
+                        height: 11px;
                         y: (parent.height - self.height) / 2;
                         PlayIcon {
                             icon-color: #4ade80;
-                            width: 8px;
-                            height: 10px;
+                            width: 9px;
+                            height: 11px;
                         }
                     }
 
                     Text {
                         text: root.clock-text;
                         color: white;
-                        font-size: 13px;
+                        font-size: 15px;
                         font-weight: 600;
                         vertical-alignment: center;
                     }
 
-                    // titik merah kecil bila ada notifikasi aktif
+                    // titik merah indikator notifikasi aktif di Action Center
                     if root.notif-total > 0: Rectangle {
-                        width: 6px;
-                        height: 6px;
-                        border-radius: 3px;
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
                         background: #d64545;
                         y: (parent.height - self.height) / 2;
                     }
