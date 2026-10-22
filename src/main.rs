@@ -50,14 +50,28 @@ const MAX_ATTEMPTS: u32 = 20;
 /// Jeda antar percobaan memasang style jendela, dalam milidetik.
 const RETRY_MS: u64 = 50;
 
-/// Lebar jendela saat idle (garis tipis di tepi atas), dalam piksel logis.
-const IDLE_W: f32 = 140.0;
-/// Tinggi jendela saat idle, dalam piksel logis.
-const IDLE_H: f32 = 4.0;
-/// Lebar jendela saat expanded, dalam piksel logis.
-const FULL_W: f32 = 360.0;
-/// Tinggi jendela saat expanded: pill 116 px ditambah celah 8 px dari tepi atas (nilai 8 dan 116 juga ada di `ui/main.slint`).
-const FULL_H: f32 = 124.0;
+/// Batas ukuran jendela overlay (dalam piksel logis).
+/// Nilai aktual per state ditentukan oleh Slint sebagai sumber kebenaran (Langkah 12).
+pub const MIN_WINDOW_W: f32 = 140.0;
+pub const MIN_WINDOW_H: f32 = 4.0;
+pub const MAX_EXPANDED_W: f32 = 480.0;
+pub const MAX_EXPANDED_H: f32 = 300.0;
+
+/// Membatasi ukuran jendela logis ke dalam batas aman (tidak melebihi batas atas).
+pub fn clamp_window_size(requested_w: f32, requested_h: f32) -> (f32, f32) {
+    let w = requested_w.clamp(MIN_WINDOW_W, MAX_EXPANDED_W);
+    let h = requested_h.clamp(MIN_WINDOW_H, MAX_EXPANDED_H);
+    (w, h)
+}
+
+/// Mengambil ukuran jendela logis saat ini dari properti Slint.
+fn current_window_size(ui: &MainWindow) -> (f32, f32) {
+    if ui.get_expanded() {
+        clamp_window_size(ui.get_requested_width(), ui.get_requested_height())
+    } else {
+        (MIN_WINDOW_W, MIN_WINDOW_H)
+    }
+}
 /// Jeda sebelum jendela mengecil setelah collapse, dalam milidetik.
 /// Sedikit di atas durasi animasi (250 ms) supaya animasi tidak terpotong.
 const SHRINK_DELAY_MS: u64 = 280;
@@ -115,11 +129,8 @@ fn place(ui: &MainWindow, w: f32, h: f32) {
 
 /// Menempatkan ulang jendela di monitor pilihan dengan ukuran yang sesuai status expanded saat ini.
 fn re_place(ui: &MainWindow) {
-    if ui.get_expanded() {
-        place(ui, FULL_W, FULL_H);
-    } else {
-        place(ui, IDLE_W, IDLE_H);
-    }
+    let (w, h) = current_window_size(ui);
+    place(ui, w, h);
 }
 
 /// Memasang style overlay lalu menempatkan jendela dalam keadaan idle.
@@ -127,7 +138,7 @@ fn re_place(ui: &MainWindow) {
 fn try_apply(weak: slint::Weak<MainWindow>, attempt: u32) {
     let Some(ui) = weak.upgrade() else { return };
     if apply_overlay_style(&ui) {
-        place(&ui, IDLE_W, IDLE_H);
+        place(&ui, MIN_WINDOW_W, MIN_WINDOW_H);
         eprintln!("[overlay] ready on attempt {attempt}");
     } else if attempt < MAX_ATTEMPTS {
         Timer::single_shot(Duration::from_millis(RETRY_MS), move || {
@@ -287,8 +298,9 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = weak.upgrade() else { return };
             if hovered {
                 timer.stop();
-                place(&ui, FULL_W, FULL_H); // jendela membesar dulu
-                ui.set_expanded(true); // baru konten beranimasi
+                ui.set_expanded(true); // aktifkan state expanded agar Slint menghitung ukuran target
+                let (w, h) = current_window_size(&ui);
+                place(&ui, w, h); // jendela membesar sesuai target dimensi tab aktif
                 media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
                 refresh_notifications(weak.clone()); // baca notifikasi di thread latar
             } else {
@@ -299,10 +311,24 @@ fn main() -> Result<(), slint::PlatformError> {
                     Duration::from_millis(SHRINK_DELAY_MS),
                     move || {
                         if let Some(ui) = weak2.upgrade() {
-                            place(&ui, IDLE_W, IDLE_H); // baru jendela mengecil
+                            place(&ui, MIN_WINDOW_W, MIN_WINDOW_H); // baru jendela mengecil
                         }
                     },
                 );
+            }
+        });
+    }
+
+    // --- penyesuaian ukuran dinamis dari Slint (Langkah 12) ---
+    // Saat tab berpindah atau konten berubah saat expanded, Slint meminta Rust
+    // menyesuaikan ukuran jendela secara dinamis.
+    {
+        let weak = ui.as_weak();
+        ui.on_request_window_resize(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            if ui.get_expanded() {
+                let (w, h) = current_window_size(&ui);
+                place(&ui, w, h);
             }
         });
     }
@@ -484,4 +510,30 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // ikon tray menjaga proses tetap hidup saat jendela disembunyikan
     slint::run_event_loop()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clamp_window_size_normal() {
+        let (w, h) = clamp_window_size(380.0, 160.0);
+        assert_eq!(w, 380.0);
+        assert_eq!(h, 160.0);
+    }
+
+    #[test]
+    fn test_clamp_window_size_max_bounds() {
+        let (w, h) = clamp_window_size(600.0, 500.0);
+        assert_eq!(w, MAX_EXPANDED_W);
+        assert_eq!(h, MAX_EXPANDED_H);
+    }
+
+    #[test]
+    fn test_clamp_window_size_min_bounds() {
+        let (w, h) = clamp_window_size(50.0, 1.0);
+        assert_eq!(w, MIN_WINDOW_W);
+        assert_eq!(h, MIN_WINDOW_H);
+    }
 }

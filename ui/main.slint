@@ -97,6 +97,35 @@ component ControlButton inherits Rectangle {
     }
 }
 
+// Item tab navigasi pill dengan highlight saat aktif atau di-hover.
+component TabItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 22px;
+    border-radius: 11px;
+    background: root.active ? #2c2c2c : (touch.has-hover ? #1a1a1a : transparent);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.active ? white : (touch.has-hover ? #d0d0d0 : #757575);
+            font-size: 11px;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 // Satu baris notifikasi untuk ditampilkan di pill. Semua field sudah berupa teks siap
 // tampil (disusun di Rust), jadi Slint tidak perlu memformat apa pun.
 export struct NotifRow {
@@ -162,10 +191,33 @@ export component MainWindow inherits Window {
     // true: pill menampilkan notifikasi; false: menampilkan media
     in-out property <bool> show-notifs: false;
 
+    // --- model tab dan ukuran dinamis (Langkah 12)
+    // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
+    in-out property <int> active-tab: 0;
+
+    // Dimensi target pill saat expanded sesuai tab aktif dan konten
+    property <length> target-pill-w:
+        root.active-tab == 0 ? (root.has-media ? 380px : 360px) :
+        root.active-tab == 1 ? 380px :
+        root.active-tab == 2 ? 360px :
+        360px;
+
+    property <length> target-pill-h:
+        root.active-tab == 0 ? (root.has-media ? 160px : 130px) :
+        root.active-tab == 1 ? 180px :
+        root.active-tab == 2 ? 140px :
+        140px;
+
+    // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
+    // Saat expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
+    out property <length> requested-width: root.expanded ? root.target-pill-w : 140px;
+    out property <length> requested-height: root.expanded ? (root.target-pill-h + 8px) : 4px;
+
     callback hover-changed(bool);
     callback play-pause();
     callback skip-next();
     callback skip-previous();
+    callback request-window-resize();
 
     property <bool> hovered: area.has-hover;
     changed hovered => { root.hover-changed(root.hovered); }
@@ -179,12 +231,24 @@ export component MainWindow inherits Window {
         }
     }
 
+    // Minta Rust menyesuaikan ukuran jendela saat tab berganti
+    changed active-tab => {
+        root.request-window-resize();
+    }
+
+    // Minta Rust menyesuaikan ukuran jika status media berubah saat di tab Home
+    changed has-media => {
+        if (root.active-tab == 0 && root.expanded) {
+            root.request-window-resize();
+        }
+    }
+
     area := TouchArea {
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: root.expanded ? 8px : 0px;
-            width: root.expanded ? 360px : 140px;
-            height: root.expanded ? 116px : 4px;
+            width: root.expanded ? root.target-pill-w : 140px;
+            height: root.expanded ? root.target-pill-h : 4px;
             border-radius: min(self.height / 2, 28px);
             background: black;
             clip: true;
@@ -194,165 +258,269 @@ export component MainWindow inherits Window {
                 easing: ease-out;
             }
 
-            // --- tampilan media
-            if !root.show-notifs: VerticalLayout {
-                padding: 16px;
-                spacing: 4px;
+            // --- bar tab navigasi (hanya tampil saat expanded) ---
+            if root.expanded: HorizontalLayout {
+                y: 8px;
+                height: 22px;
                 alignment: center;
+                spacing: 6px;
+
+                TabItem {
+                    text: "Home";
+                    active: root.active-tab == 0;
+                    clicked => { root.active-tab = 0; }
+                }
+
+                TabItem {
+                    text: "Calendar";
+                    active: root.active-tab == 1;
+                    clicked => { root.active-tab = 1; }
+                }
+
+                TabItem {
+                    text: "Timer";
+                    active: root.active-tab == 2;
+                    clicked => { root.active-tab = 2; }
+                }
+
+                TabItem {
+                    text: "Mail";
+                    active: root.active-tab == 3;
+                    clicked => { root.active-tab = 3; }
+                }
+            }
+
+            // --- konten tab Home (active-tab == 0) ---
+            if root.expanded && root.active-tab == 0: Rectangle {
+                y: 32px;
+                height: parent.height - 32px;
+
+                // --- tampilan media
+                if !root.show-notifs: VerticalLayout {
+                    padding-left: 16px;
+                    padding-right: 16px;
+                    padding-top: 4px;
+                    padding-bottom: 8px;
+                    spacing: 4px;
+                    alignment: center;
+
+                    Text {
+                        text: root.track-title;
+                        color: white;
+                        font-size: 15px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: root.track-artist;
+                        color: #b0b0b0;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        overflow: elide;
+                    }
+
+                    // baris tombol: previous, play/pause (menampilkan aksi berikutnya), next
+                    if root.has-media: Rectangle {
+                        height: 30px;
+
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 24px;
+
+                            ControlButton {
+                                clicked => { root.skip-previous(); }
+
+                                PrevIcon {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                            }
+
+                            ControlButton {
+                                clicked => { root.play-pause(); }
+
+                                PauseIcon {
+                                    visible: root.playing;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                PlayIcon {
+                                    visible: !root.playing;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                            }
+
+                            ControlButton {
+                                clicked => { root.skip-next(); }
+
+                                NextIcon {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // --- tampilan notifikasi (menggantikan tampilan media)
+                // Klik di kartu berpindah ke kelompok berikutnya (berputar).
+                if root.show-notifs: Rectangle {
+                    VerticalLayout {
+                        padding-left: 20px;
+                        // ruang untuk lencana di kanan bawah
+                        padding-right: 56px;
+                        padding-top: 8px;
+                        padding-bottom: 8px;
+                        spacing: 3px;
+                        alignment: center;
+
+                        if root.notifs.length == 0: Text {
+                            text: "No notifications";
+                            color: #b0b0b0;
+                            font-size: 14px;
+                            overflow: elide;
+                        }
+
+                        // baris atas: aplikasi, umur, dan posisi item bila lebih dari satu
+                        if root.notifs.length > 0: HorizontalLayout {
+                            spacing: 8px;
+
+                            Text {
+                                text: root.notifs[root.notif-index].header;
+                                color: #b0b0b0;
+                                font-size: 12px;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+
+                            Text {
+                                text: root.notifs[root.notif-index].age;
+                                color: #b0b0b0;
+                                font-size: 12px;
+                                horizontal-alignment: right;
+                            }
+
+                            Text {
+                                text: root.notifs.length > 1 ? "\{root.notif-index + 1}/\{root.notifs.length}" : "";
+                                color: #b0b0b0;
+                                font-size: 12px;
+                                horizontal-alignment: right;
+                            }
+                        }
+
+                        if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
+                            text: root.notifs[root.notif-index].title;
+                            color: white;
+                            font-size: 14px;
+                            font-weight: 700;
+                            overflow: elide;
+                        }
+
+                        if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
+                            text: root.notifs[root.notif-index].body;
+                            color: #b0b0b0;
+                            font-size: 12px;
+                            overflow: elide;
+                        }
+                    }
+
+                    // di atas teks supaya klik selalu sampai ke TouchArea
+                    TouchArea {
+                        clicked => {
+                            if (root.notif-index + 1 >= root.notifs.length) {
+                                root.notif-index = 0;
+                            } else {
+                                root.notif-index += 1;
+                            }
+                        }
+                    }
+                }
+
+                // lencana di kanan bawah, di atas kedua tampilan
+                CountBadge {
+                    x: parent.width - self.width - 16px;
+                    y: parent.height - self.height - 12px;
+                    count: root.notif-total;
+                    active: root.show-notifs;
+                    visible: root.notif-total > 0;
+                    clicked => { root.show-notifs = !root.show-notifs; }
+                }
+            }
+
+            // --- konten tab Calendar (active-tab == 1) ---
+            if root.expanded && root.active-tab == 1: VerticalLayout {
+                y: 32px;
+                height: parent.height - 32px;
+                alignment: center;
+                spacing: 6px;
+                padding: 16px;
 
                 Text {
-                    text: root.track-title;
+                    text: "Calendar";
                     color: white;
                     font-size: 16px;
                     font-weight: 700;
                     horizontal-alignment: center;
-                    overflow: elide;
-                    visible: root.expanded;
                 }
 
                 Text {
-                    text: root.track-artist;
-                    color: #b0b0b0;
-                    font-size: 13px;
+                    text: "Month grid arriving in Step 14";
+                    color: #888888;
+                    font-size: 12px;
                     horizontal-alignment: center;
-                    overflow: elide;
-                    visible: root.expanded;
-                }
-
-                // baris tombol: previous, play/pause (menampilkan aksi berikutnya), next
-                if root.has-media: Rectangle {
-                    height: 30px;
-                    visible: root.expanded;
-
-                    HorizontalLayout {
-                        alignment: center;
-                        spacing: 24px;
-
-                        ControlButton {
-                            clicked => { root.skip-previous(); }
-
-                            PrevIcon {
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                            }
-                        }
-
-                        ControlButton {
-                            clicked => { root.play-pause(); }
-
-                            PauseIcon {
-                                visible: root.playing;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                            }
-
-                            PlayIcon {
-                                visible: !root.playing;
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                            }
-                        }
-
-                        ControlButton {
-                            clicked => { root.skip-next(); }
-
-                            NextIcon {
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                            }
-                        }
-                    }
                 }
             }
 
-            // --- tampilan notifikasi (menggantikan tampilan media; tinggi pill tetap)
-            // Klik di kartu berpindah ke kelompok berikutnya (berputar).
-            if root.show-notifs: Rectangle {
-                VerticalLayout {
-                    padding-left: 20px;
-                    // ruang untuk lencana di kanan bawah
-                    padding-right: 56px;
-                    padding-top: 12px;
-                    padding-bottom: 12px;
-                    spacing: 3px;
-                    alignment: center;
+            // --- konten tab Timer (active-tab == 2) ---
+            if root.expanded && root.active-tab == 2: VerticalLayout {
+                y: 32px;
+                height: parent.height - 32px;
+                alignment: center;
+                spacing: 6px;
+                padding: 16px;
 
-                    if root.notifs.length == 0: Text {
-                        text: "No notifications";
-                        color: #b0b0b0;
-                        font-size: 14px;
-                        overflow: elide;
-                        visible: root.expanded;
-                    }
-
-                    // baris atas: aplikasi, umur, dan posisi item bila lebih dari satu
-                    if root.notifs.length > 0: HorizontalLayout {
-                        spacing: 8px;
-
-                        Text {
-                            text: root.notifs[root.notif-index].header;
-                            color: #b0b0b0;
-                            font-size: 12px;
-                            overflow: elide;
-                            horizontal-stretch: 1;
-                            visible: root.expanded;
-                        }
-
-                        Text {
-                            text: root.notifs[root.notif-index].age;
-                            color: #b0b0b0;
-                            font-size: 12px;
-                            horizontal-alignment: right;
-                            visible: root.expanded;
-                        }
-
-                        Text {
-                            text: root.notifs.length > 1 ? "\{root.notif-index + 1}/\{root.notifs.length}" : "";
-                            color: #b0b0b0;
-                            font-size: 12px;
-                            horizontal-alignment: right;
-                            visible: root.expanded;
-                        }
-                    }
-
-                    if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
-                        text: root.notifs[root.notif-index].title;
-                        color: white;
-                        font-size: 14px;
-                        font-weight: 700;
-                        overflow: elide;
-                        visible: root.expanded;
-                    }
-
-                    if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
-                        text: root.notifs[root.notif-index].body;
-                        color: #b0b0b0;
-                        font-size: 12px;
-                        overflow: elide;
-                        visible: root.expanded;
-                    }
+                Text {
+                    text: "Timer & Stopwatch";
+                    color: white;
+                    font-size: 16px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
                 }
 
-                // di atas teks supaya klik selalu sampai ke TouchArea
-                TouchArea {
-                    clicked => {
-                        if (root.notif-index + 1 >= root.notifs.length) {
-                            root.notif-index = 0;
-                        } else {
-                            root.notif-index += 1;
-                        }
-                    }
+                Text {
+                    text: "Stopwatch, countdown & alarm arriving in Step 15";
+                    color: #888888;
+                    font-size: 12px;
+                    horizontal-alignment: center;
                 }
             }
 
-            // lencana di kanan bawah, di atas kedua tampilan (urutan paling akhir = paling atas)
-            CountBadge {
-                x: parent.width - self.width - 16px;
-                y: parent.height - self.height - 20px;
-                count: root.notif-total;
-                active: root.show-notifs;
-                visible: root.expanded && root.notif-total > 0;
-                clicked => { root.show-notifs = !root.show-notifs; }
+            // --- konten tab Mail (active-tab == 3) ---
+            if root.expanded && root.active-tab == 3: VerticalLayout {
+                y: 32px;
+                height: parent.height - 32px;
+                alignment: center;
+                spacing: 6px;
+                padding: 16px;
+
+                Text {
+                    text: "Mail & Tasks";
+                    color: white;
+                    font-size: 16px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Integration arriving in Step 17";
+                    color: #888888;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                }
             }
         }
     }

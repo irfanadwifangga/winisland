@@ -818,6 +818,19 @@ Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
 - **Verifikasi:** 27 unit tests lolos (7 tes baru di `fullscreen.rs`), `cargo check` dan `cargo fmt` bersih.
 - **Uji Pengguna (22 Okt 2026): Lolos.** Mode fullscreen video browser (tombol F) menyembunyikan strip idle ~0,5 dtk, tombol Esc memunculkan kembali, sakelar "Hide in fullscreen" di menu tray berfungsi mematikan auto-hide saat dibutuhkan.
 
+### Langkah 12: Kerangka Tab dan Ukuran Dinamis (22 Okt 2026)
+
+- **Masalah:** Konstanta ukuran `FULL_W` (360) dan `FULL_H` (124) sebelumnya di-hardcode di `main.rs` dan duplikat dengan nilai di `ui/main.slint`. Setiap tab di Fase 2 membutuhkan ukuran jendela berbeda.
+- **Penyelesaian:**
+  - Menjadikan Slint sebagai **sumber kebenaran tunggal** untuk ukuran jendela (`requested-width`, `requested-height`).
+  - Menghapus konstanta `FULL_W` dan `FULL_H` di `main.rs`, digantikan oleh batas atas aman (`MAX_EXPANDED_W = 480.0`, `MAX_EXPANDED_H = 300.0`, `MIN_WINDOW_W = 140.0`, `MIN_WINDOW_H = 4.0`).
+  - Fungsi `clamp_window_size` dan `current_window_size` membaca properti Slint dan memastikan ukuran tidak melebihi batas.
+  - Callback `request-window-resize` di Slint memicu Rust mengubah ukuran jendela secara instan saat tab berganti atau status media berubah.
+  - Komponen `TabItem` dan bar tab navigasi (Home, Calendar, Timer, Mail) dengan highlight status aktif dan interaksi hover.
+  - Tab terakhir yang dipilih diingat di memori (`active-tab`), dipulihkan otomatis saat expand berikutnya.
+  - Placeholder dibuat untuk tab Calendar, Timer, dan Mail, siap diisi pada langkah 14, 15, dan 17.
+- **Verifikasi:** 30 unit tests lolos (3 tes baru untuk `clamp_window_size`), `cargo check` dan `cargo fmt` bersih.
+
 ## 9. Fase 2: Home, tab, dan ukuran dinamis (22 Okt 2026)
 
 ### 9.1 Permintaan pengguna
@@ -880,7 +893,7 @@ Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
 
 | # | Isi | Status |
 | --- | --- | --- |
-| 12 | Kerangka: model state (tab), ukuran jendela per state dengan Slint sebagai sumber kebenaran, batas ukuran | Direncanakan |
+| 12 | Kerangka: model state (tab), ukuran jendela per state dengan Slint sebagai sumber kebenaran, batas ukuran | Selesai (30 tes lolos) |
 | 13 | Home: jam, notifikasi 1 baris, statistik CPU/RAM/baterai, timer polling hanya saat expanded; ukur RAM dan CPU | Direncanakan |
 | 14 | Bar tab + Kalender (grid bulan lokal) | Direncanakan |
 | 15 | Timer dan Stopwatch (alarm dengan peek), lalu Jadwal | Direncanakan |
