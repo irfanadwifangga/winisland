@@ -139,33 +139,6 @@ export struct NotifRow {
     age: string,
 }
 
-// Lencana jumlah notifikasi. Merah saat tampilan media aktif, putih saat tampilan
-// notifikasi aktif. Klik pada lencana berpindah antara kedua tampilan.
-component CountBadge inherits Rectangle {
-    callback clicked();
-
-    in property <int> count;
-    in property <bool> active;
-
-    width: 34px;
-    height: 24px;
-    border-radius: 12px;
-    background: root.active ? white : #d64545;
-
-    Text {
-        text: root.count > 99 ? "99+" : "\{root.count}";
-        color: root.active ? black : white;
-        font-size: 12px;
-        font-weight: 700;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
 export component MainWindow inherits Window {
     default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
     no-frame: true;
@@ -181,6 +154,15 @@ export component MainWindow inherits Window {
     in-out property <bool> expanded: false;
     // teks jam digital untuk mode peek dan home (mis. "13:05")
     in-out property <string> clock-text: "12:00";
+    // teks tanggal lokal untuk home (mis. "Thu, 22 Oct")
+    in-out property <string> date-text: "Thu, 22 Oct";
+
+    // statistik sistem (Langkah 13)
+    in-out property <int> cpu-pct: 0;
+    in-out property <int> ram-pct: 0;
+    in-out property <bool> has-battery: false;
+    in-out property <int> battery-pct: 0;
+    in-out property <bool> battery-charging: false;
 
     in-out property <string> track-title: "";
     in-out property <string> track-artist: "";
@@ -206,7 +188,7 @@ export component MainWindow inherits Window {
     // Dimensi target pill saat peek atau expanded sesuai tab aktif dan konten
     property <length> target-pill-w:
         root.expanded ? (
-            root.active-tab == 0 ? (root.has-media ? 380px : 360px) :
+            root.active-tab == 0 ? 380px :
             root.active-tab == 1 ? 380px :
             root.active-tab == 2 ? 360px :
             360px
@@ -214,7 +196,7 @@ export component MainWindow inherits Window {
 
     property <length> target-pill-h:
         root.expanded ? (
-            root.active-tab == 0 ? (root.has-media ? 160px : 130px) :
+            root.active-tab == 0 ? (root.show-notifs ? 135px : (root.has-media ? 165px : 120px)) :
             root.active-tab == 1 ? 180px :
             root.active-tab == 2 ? 140px :
             140px
@@ -238,13 +220,20 @@ export component MainWindow inherits Window {
     // Setiap kali pill dibuka, mulai dari tampilan notifikasi bila tidak ada media tetapi
     // ada notifikasi; bila ada media atau tidak ada notifikasi, mulai dari tampilan media.
     changed expanded => {
-        if (root.expanded) {
-            root.show-notifs = !root.has-media && root.notif-total > 0;
+        if (!root.expanded) {
+            root.show-notifs = false;
             root.notif-index = 0;
         }
     }
 
     // Minta Rust menyesuaikan ukuran jendela saat tab berganti
+    // Minta Rust menyesuaikan ukuran jika status tampilan notifikasi detail berubah
+    changed show-notifs => {
+        if (root.active-tab == 0 && root.expanded) {
+            root.request-window-resize();
+        }
+    }
+
     changed active-tab => {
         root.request-window-resize();
     }
@@ -353,159 +342,366 @@ export component MainWindow inherits Window {
                 y: 32px;
                 height: parent.height - 32px;
 
-                // --- tampilan media
+                // --- Tampilan Utama Home (Jam, Tanggal, Stats, Notifikasi 1 baris, Media jika ada) ---
                 if !root.show-notifs: VerticalLayout {
-                    padding-left: 16px;
-                    padding-right: 16px;
+                    padding-left: 14px;
+                    padding-right: 14px;
                     padding-top: 4px;
-                    padding-bottom: 8px;
-                    spacing: 4px;
-                    alignment: center;
+                    padding-bottom: 6px;
+                    spacing: 6px;
 
-                    Text {
-                        text: root.track-title;
-                        color: white;
-                        font-size: 15px;
-                        font-weight: 700;
-                        horizontal-alignment: center;
-                        overflow: elide;
-                    }
+                    // Baris 1: Jam & Tanggal di kiri, Chip Statistik di kanan
+                    HorizontalLayout {
+                        alignment: space-between;
 
-                    Text {
-                        text: root.track-artist;
-                        color: #b0b0b0;
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                        overflow: elide;
-                    }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 0px;
 
-                    // baris tombol: previous, play/pause (menampilkan aksi berikutnya), next
-                    if root.has-media: Rectangle {
-                        height: 30px;
+                            Text {
+                                text: root.clock-text;
+                                color: white;
+                                font-size: 20px;
+                                font-weight: 700;
+                            }
+
+                            Text {
+                                text: root.date-text;
+                                color: #8e8e93;
+                                font-size: 11px;
+                                font-weight: 500;
+                            }
+                        }
 
                         HorizontalLayout {
-                            alignment: center;
-                            spacing: 24px;
+                            alignment: end;
+                            spacing: 5px;
+                            y: (parent.height - self.height) / 2;
 
-                            ControlButton {
-                                clicked => { root.skip-previous(); }
-
-                                PrevIcon {
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
+                            // Chip CPU
+                            Rectangle {
+                                height: 22px;
+                                border-radius: 6px;
+                                background: #1c1c1e;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+                                    alignment: center;
+                                    Text {
+                                        text: "CPU \{root.cpu-pct}%";
+                                        color: root.cpu-pct > 80 ? #f87171 : #4ade80;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
 
-                            ControlButton {
-                                clicked => { root.play-pause(); }
-
-                                PauseIcon {
-                                    visible: root.playing;
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
-                                }
-
-                                PlayIcon {
-                                    visible: !root.playing;
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
+                            // Chip RAM
+                            Rectangle {
+                                height: 22px;
+                                border-radius: 6px;
+                                background: #1c1c1e;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+                                    alignment: center;
+                                    Text {
+                                        text: "RAM \{root.ram-pct}%";
+                                        color: root.ram-pct > 85 ? #f87171 : #38bdf8;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
 
-                            ControlButton {
-                                clicked => { root.skip-next(); }
-
-                                NextIcon {
-                                    x: (parent.width - self.width) / 2;
-                                    y: (parent.height - self.height) / 2;
+                            // Chip Baterai (hanya jika ada baterai)
+                            if root.has-battery: Rectangle {
+                                height: 22px;
+                                border-radius: 6px;
+                                background: #1c1c1e;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+                                    alignment: center;
+                                    Text {
+                                        text: root.battery-charging ? "⚡ \{root.battery-pct}%" : "BAT \{root.battery-pct}%";
+                                        color: root.battery-charging ? #facc15 : (root.battery-pct <= 20 ? #f87171 : #e2e8f0);
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // --- tampilan notifikasi (menggantikan tampilan media)
-                // Klik di kartu berpindah ke kelompok berikutnya (berputar).
-                if root.show-notifs: Rectangle {
-                    VerticalLayout {
-                        padding-left: 20px;
-                        // ruang untuk lencana di kanan bawah
-                        padding-right: 56px;
-                        padding-top: 8px;
-                        padding-bottom: 8px;
-                        spacing: 3px;
-                        alignment: center;
+                    // Baris 2: Satu baris notifikasi terbaru (aplikasi + judul, elide)
+                    Rectangle {
+                        height: 24px;
+                        border-radius: 7px;
+                        background: notif_touch.has-hover ? #252528 : #18181a;
+                        clip: true;
 
-                        if root.notifs.length == 0: Text {
-                            text: "No notifications";
-                            color: #b0b0b0;
-                            font-size: 14px;
-                            overflow: elide;
+                        HorizontalLayout {
+                            padding-left: 8px;
+                            padding-right: 8px;
+                            alignment: space-between;
+                            spacing: 6px;
+
+                            HorizontalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 6px;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: root.notif-total > 0 ? #ef4444 : #52525b;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                Text {
+                                    text: root.notif-total > 0 ? (
+                                        root.notifs.length > 0 ? (
+                                            root.notifs[0].title != "" ?
+                                                "\{root.notifs[0].header}: \{root.notifs[0].title}" :
+                                                root.notifs[0].header
+                                        ) : "\{root.notif-total} notifications"
+                                    ) : "No new notifications";
+                                    color: root.notif-total > 0 ? #e4e4e7 : #71717a;
+                                    font-size: 11px;
+                                    font-weight: root.notif-total > 0 ? 500 : 400;
+                                    overflow: elide;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            if root.notif-total > 0: Rectangle {
+                                width: 18px;
+                                height: 16px;
+                                border-radius: 8px;
+                                background: #ef4444;
+                                y: (parent.height - self.height) / 2;
+
+                                Text {
+                                    text: root.notif-total > 99 ? "99+" : "\{root.notif-total}";
+                                    color: white;
+                                    font-size: 9px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
                         }
 
-                        // baris atas: aplikasi, umur, dan posisi item bila lebih dari satu
-                        if root.notifs.length > 0: HorizontalLayout {
+                        notif_touch := TouchArea {
+                            clicked => {
+                                if (root.notif-total > 0) {
+                                    root.show-notifs = true;
+                                }
+                            }
+                        }
+                    }
+
+                    // Baris 3: Media baris (jika ada sesi media aktif)
+                    if root.has-media: Rectangle {
+                        height: 34px;
+                        border-radius: 8px;
+                        background: #141416;
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 6px;
+                            alignment: space-between;
                             spacing: 8px;
 
-                            Text {
-                                text: root.notifs[root.notif-index].header;
-                                color: #b0b0b0;
-                                font-size: 12px;
-                                overflow: elide;
+                            VerticalLayout {
                                 horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 1px;
+
+                                Text {
+                                    text: root.track-title;
+                                    color: white;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    overflow: elide;
+                                }
+
+                                if root.track-artist != "": Text {
+                                    text: root.track-artist;
+                                    color: #a1a1aa;
+                                    font-size: 10px;
+                                    overflow: elide;
+                                }
                             }
 
-                            Text {
-                                text: root.notifs[root.notif-index].age;
-                                color: #b0b0b0;
-                                font-size: 12px;
-                                horizontal-alignment: right;
-                            }
+                            HorizontalLayout {
+                                alignment: end;
+                                spacing: 4px;
+                                y: (parent.height - self.height) / 2;
 
-                            Text {
-                                text: root.notifs.length > 1 ? "\{root.notif-index + 1}/\{root.notifs.length}" : "";
-                                color: #b0b0b0;
-                                font-size: 12px;
-                                horizontal-alignment: right;
-                            }
-                        }
+                                ControlButton {
+                                    width: 26px;
+                                    height: 26px;
+                                    border-radius: 13px;
+                                    clicked => { root.skip-previous(); }
 
-                        if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
-                            text: root.notifs[root.notif-index].title;
-                            color: white;
-                            font-size: 14px;
-                            font-weight: 700;
-                            overflow: elide;
-                        }
+                                    PrevIcon {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
 
-                        if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
-                            text: root.notifs[root.notif-index].body;
-                            color: #b0b0b0;
-                            font-size: 12px;
-                            overflow: elide;
-                        }
-                    }
+                                ControlButton {
+                                    width: 26px;
+                                    height: 26px;
+                                    border-radius: 13px;
+                                    clicked => { root.play-pause(); }
 
-                    // di atas teks supaya klik selalu sampai ke TouchArea
-                    TouchArea {
-                        clicked => {
-                            if (root.notif-index + 1 >= root.notifs.length) {
-                                root.notif-index = 0;
-                            } else {
-                                root.notif-index += 1;
+                                    PauseIcon {
+                                        visible: root.playing;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+
+                                    PlayIcon {
+                                        visible: !root.playing;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
+
+                                ControlButton {
+                                    width: 26px;
+                                    height: 26px;
+                                    border-radius: 13px;
+                                    clicked => { root.skip-next(); }
+
+                                    NextIcon {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                // lencana di kanan bawah, di atas kedua tampilan
-                CountBadge {
-                    x: parent.width - self.width - 16px;
-                    y: parent.height - self.height - 12px;
-                    count: root.notif-total;
-                    active: root.show-notifs;
-                    visible: root.notif-total > 0;
-                    clicked => { root.show-notifs = !root.show-notifs; }
+                // --- Tampilan Detail Notifikasi (saat baris notifikasi atau lencana diklik) ---
+                if root.show-notifs: Rectangle {
+                    VerticalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        padding-top: 4px;
+                        padding-bottom: 8px;
+                        spacing: 4px;
+
+                        // Navigasi kembali ke Home & status halaman
+                        HorizontalLayout {
+                            alignment: space-between;
+                            height: 18px;
+
+                            Rectangle {
+                                border-radius: 9px;
+                                background: back_touch.has-hover ? #2a2a2a : transparent;
+                                HorizontalLayout {
+                                    padding-left: 6px;
+                                    padding-right: 6px;
+                                    alignment: center;
+                                    Text {
+                                        text: "← Back to Home";
+                                        color: back_touch.has-hover ? white : #a1a1aa;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                back_touch := TouchArea {
+                                    clicked => { root.show-notifs = false; }
+                                }
+                            }
+
+                            if root.notifs.length > 0: Text {
+                                text: root.notifs.length > 1 ? "\{root.notif-index + 1} of \{root.notifs.length}" : "";
+                                color: #71717a;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Kartu notifikasi detail
+                        Rectangle {
+                            background: #141416;
+                            border-radius: 8px;
+                            clip: true;
+
+                            VerticalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                padding-top: 6px;
+                                padding-bottom: 6px;
+                                spacing: 2px;
+                                alignment: center;
+
+                                if root.notifs.length == 0: Text {
+                                    text: "No notifications";
+                                    color: #71717a;
+                                    font-size: 12px;
+                                }
+
+                                if root.notifs.length > 0: HorizontalLayout {
+                                    alignment: space-between;
+                                    spacing: 8px;
+
+                                    Text {
+                                        text: root.notifs[root.notif-index].header;
+                                        color: #a1a1aa;
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        overflow: elide;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    Text {
+                                        text: root.notifs[root.notif-index].age;
+                                        color: #71717a;
+                                        font-size: 10px;
+                                    }
+                                }
+
+                                if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
+                                    text: root.notifs[root.notif-index].title;
+                                    color: white;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    overflow: elide;
+                                }
+
+                                if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
+                                    text: root.notifs[root.notif-index].body;
+                                    color: #b0b0b0;
+                                    font-size: 11px;
+                                    overflow: elide;
+                                }
+                            }
+
+                            TouchArea {
+                                clicked => {
+                                    if (root.notifs.length > 0) {
+                                        if (root.notif-index + 1 >= root.notifs.length) {
+                                            root.notif-index = 0;
+                                        } else {
+                                            root.notif-index += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

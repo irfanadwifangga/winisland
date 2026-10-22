@@ -16,7 +16,7 @@
 //! Renderer dikunci ke software lewat `BackendSelector` supaya pemakaian RAM tetap kecil.
 
 use core::ffi::c_void;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -35,6 +35,7 @@ mod config;
 mod fullscreen;
 mod media;
 mod monitor;
+mod stats;
 
 mod notif;
 // `Snapshot::groups` hanya dibaca oleh `notif::debug_run` (build debug).
@@ -278,11 +279,21 @@ fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
     if ui.get_notif_index() >= len {
         ui.set_notif_index(0);
     }
-    // Bila sedang terbuka, tidak ada media aktif, dan baru saja terdeteksi ada notifikasi:
-    // beralih ke tampilan notifikasi otomatis daripada membiarkan kosong (Nothing playing).
-    if ui.get_expanded() && !ui.get_has_media() && total > 0 && !ui.get_show_notifs() {
-        ui.set_show_notifs(true);
+}
+
+/// Memperbarui statistik sistem (CPU %, RAM %, status baterai, dan tanggal lokal) pada UI.
+fn update_system_stats(ui: &MainWindow, cpu_tracker: &mut stats::CpuTracker) {
+    let cpu = cpu_tracker.sample();
+    ui.set_cpu_pct(cpu as i32);
+    ui.set_ram_pct(stats::get_ram_load() as i32);
+    if let Some(bat) = stats::get_battery_info() {
+        ui.set_has_battery(true);
+        ui.set_battery_pct(bat.percent as i32);
+        ui.set_battery_charging(bat.charging);
+    } else {
+        ui.set_has_battery(false);
     }
+    ui.set_date_text(stats::local_date_string().into());
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -333,10 +344,13 @@ fn main() -> Result<(), slint::PlatformError> {
     // Saat mouse keluar: collapse kembali ke garis idle 4 px setelah `SHRINK_DELAY_MS`.
     let shrink_timer = Rc::new(Timer::default());
     let clock_timer = Rc::new(Timer::default());
+    let cpu_tracker = Rc::new(RefCell::new(stats::CpuTracker::new()));
     {
         let weak = ui.as_weak();
         let shrink_t = shrink_timer.clone();
         let clock_t = clock_timer.clone();
+        let cpu_tracker_tick = cpu_tracker.clone();
+        let cpu_tracker_exit = cpu_tracker.clone();
         ui.on_hover_changed(move |hovered| {
             let Some(ui) = weak.upgrade() else { return };
             if hovered {
@@ -349,9 +363,15 @@ fn main() -> Result<(), slint::PlatformError> {
 
                     // Mulai timer jam 1 detik selama terlihat
                     let clock_weak = weak.clone();
+                    let cpu_tracker_tick = cpu_tracker_tick.clone();
                     clock_t.start(TimerMode::Repeated, Duration::from_secs(1), move || {
                         if let Some(ui) = clock_weak.upgrade() {
                             ui.set_clock_text(local_time_string().into());
+                            // Statistik sistem hanya diperbarui saat expanded (0% CPU idle saat peek/idle)
+                            if ui.get_expanded() {
+                                let mut tracker = cpu_tracker_tick.borrow_mut();
+                                update_system_stats(&ui, &mut tracker);
+                            }
                         }
                     });
                 }
@@ -360,6 +380,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 ui.set_expanded(false);
                 ui.set_peek(false);
                 clock_t.stop(); // matikan timer jam saat idle (0% CPU idle)
+                cpu_tracker_exit.borrow_mut().reset(); // reset delta CPU tracker
 
                 let weak2 = weak.clone();
                 shrink_t.start(
@@ -379,11 +400,21 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let weak = ui.as_weak();
         let media_ctl = media_ctl.clone();
+        let cpu_tracker_expand = cpu_tracker.clone();
         ui.on_expand_clicked(move || {
             let Some(ui) = weak.upgrade() else { return };
             ui.set_expanded(true);
             let (w, h) = current_window_size(&ui);
             place(&ui, w, h);
+
+            // Inisialisasi statistik sistem seketika saat dibuka
+            {
+                let mut tracker = cpu_tracker_expand.borrow_mut();
+                tracker.reset();
+                let _ = tracker.sample();
+                update_system_stats(&ui, &mut tracker);
+            }
+
             media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
             refresh_notifications(weak.clone()); // baca notifikasi di thread latar
         });
