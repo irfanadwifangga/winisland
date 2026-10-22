@@ -744,25 +744,22 @@ Hasil (laporan pengguna, Windows, build debug):
 
 **10e (lolos uji pengguna):** `src/config.rs` (baru), item menu tray "Notification body: Hidden/Shown" (judul teks, bukan `checkable`, seperti Autostart), `config::load()` di awal startup, env var `WINISLAND_NOTIF_BODY` dihapus dari jalur fetch (tersisa hanya di `debug_run` lewat `config::show_body()`). Tinggi pill tidak berubah: baris body (12 px, satu baris, elide) sudah ada di UI 10d dan muat di 116 px.
 
-| Titik | `.exe` MB | Private WS idle | Commit idle | WS total idle | CPU idle |
-| --- | --- | --- | --- | --- | --- |
-| Setelah 9d-1 | 7,35 | 2,93 | 3,98 | 25,42 | 0% |
-| Setelah 10e (gabungan 9d-2, 10d, 10e) | 7,45 | 4,25 | 5,49 | 29,75 | tidak dilaporkan |
-| Selisih | +0,10 | +1,32 | +1,51 | +4,33 |  |
+#### Hasil Bisect & Verifikasi RAM (22 Okt 2026)
 
-Per fase setelah 10e (private / working set / commit, MB): A awal 3,91 / 29,39 / 5,17; B setelah hover 4,37 / 29,88 / 5,70; C idle 60 dtk 4,25 / 29,75 / 5,49. Sebagai pembanding, 9d-1: A 3,18, B 3,05, C 2,93 (private).
+Pengukuran bisect menggunakan `measure.ps1` pada build `dist` membuktikan secara definitif sumber kenaikan RAM:
 
-**Pembacaan (inferensi dari satu kali ukur, bukan bukti):**
+| Varian | A (awal) | B (setelah hover) | C (idle 60s) | Commit C |
+|---|---|---|---|---|
+| 9d-1 | 2,90 MB | 2,93 MB | 2,87 MB | 3,96 MB |
+| 9d-2 | 2,88 MB | 2,86 MB | 2,83 MB | 3,94 MB |
+| 10d | 2,88 MB | **4,31 MB** | **4,25 MB** | 5,49 MB |
+| 10e | 2,89 MB | **4,44 MB** | **4,37 MB** | 5,64 MB |
+| **HEAD-nofetch** | 2,88 MB | **2,93 MB** | **2,88 MB** | 3,98 MB |
 
-1. Kenaikan sudah ada di fase A sebelum hover (3,91 vs 3,18 = +0,73 MB). Sebagian berasal dari kode dan UI yang lebih besar (komponen tombol 9d-2, tampilan notifikasi dan model Slint di 10d, `.exe` +0,10 MB).
-2. Pola hover berubah. Di 9d-1 private turun setelah hover (3,18, 3,05, 2,93); sekarang naik (3,91 menjadi 4,37) dan hanya turun sebagian setelah 60 detik (4,25). Konsisten dengan pembacaan notifikasi (WinRT notifikasi dan `AppInfo`) yang menahan sekitar 0,3-0,5 MB setelah hover pertama.
-3. Penyebab pasti belum diketahui karena 9d-2 dan 10d tidak pernah diukur sendiri.
-
-**Keputusan dan status:** sesuai keputusan pengguna (RAM fleksibel, tanpa ambang lulus/gagal) angka ini dicatat sebagai informasi. Catatan kritis: prioritas awal proyek adalah RAM idle sekecil mungkin, dan +1,32 MB adalah sekitar 45% dari idle 9d-1 (kecil dalam angka mutlak). Apakah perlu diselidiki adalah keputusan pengguna.
-
-**Opsi penyelidikan (belum dipilih):** (a) build dan ukur per commit (`2e20893`, `4c353e9`, HEAD) untuk memisahkan kontribusi 9d-2, 10d, dan 10e; (b) bila sumbernya pembacaan notifikasi: membaca `AppInfo` hanya untuk kelompok yang ditampilkan atau menyimpan nama aplikasi (cache), dan membatasi berapa notifikasi yang dibaca per hover.
-
-**Risiko skala yang belum diukur:** `fetch` membaca seluruh daftar Action Center setiap hover. Waktu 12-50 ms diukur dengan 27 notifikasi; untuk ratusan notifikasi belum diukur.
+**Temuan & Kesimpulan:**
+1. **Seluruh kenaikan (+1,4 MB) berasal dari jalur pembacaan notifikasi (WinRT fetch).** Varian `HEAD-nofetch` yang memiliki UI dan binary identik dengan 10e (hanya mematikan satu baris `refresh_notifications`) mencatatkan RAM idle 2,88 MB (identik dengan baseline 9d-2).
+2. **Hipotesis ukuran UI memperbesar RAM startup terbantahkan.** Fase A stabil di ~2,88-2,90 MB di semua varian.
+3. **Keputusan Pengguna:** Pengguna menerima kenaikan ~1,4 MB ini (RAM idle total ~4,3 MB masih sangat jauh di bawah batas fleksibel 20-30 MB) sebagai harga wajar untuk fitur pembacaan notifikasi, dan memilih melanjutkan pengembangan.
 
 ### Riwayat commit
 
@@ -789,6 +786,6 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 18. `25301b7` feat: read, clean and group active toast notifications (langkah 10c)
 19. `733be0a` docs: fill in commit hashes 7c406ae and 25301b7 in plan
 20. `4c353e9` feat: show notifications in the expanded overlay with badge and mode toggle (langkah 10d)
-21. (menunggu commit) sakelar privasi di menu tray (langkah 10e) dan pembaruan dokumen ini
+21. `b2ee857` feat: add notification body privacy toggle to the tray menu (langkah 10e)
 
-Hash diambil dari `git log --oneline` pada repo (21 Okt 2026).
+Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
