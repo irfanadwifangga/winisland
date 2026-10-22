@@ -8,24 +8,25 @@ Dokumen ini dibuat untuk dibawa ke sesi baru. Bagian 0 adalah ringkasan konteks 
 
 **Cara memakai di sesi baru:** unggah dokumen ini, tempel ulang blok PERAN/ATURAN (instruktur kritis, analisis pro-kontra, struktur jawaban a-e) karena sesi baru tidak mengingatnya, lalu minta Claude menarik repo dan membaca kodenya dulu sebelum menulis apa pun.
 
-- **Proyek:** `winisland`, overlay ala Dynamic Island untuk Windows. Repo publik: <https://github.com/irfanadwifangga/winisland>. Dipakai pribadi dulu, tetapi kontributor diharapkan. **Belum ada `LICENSE`, `README`, maupun `CONTRIBUTING`.**
-- **Prioritas:** RAM idle terkecil adalah yang utama. Metrik resmi: **private working set**, dengan commit sebagai pembanding. **Tidak ada anggaran keras** (diputuskan 21 Okt 2026: dibuat fleksibel supaya tidak perlu menghitung terus; angka 20-30 MB tidak lagi menjadi gerbang). Private working set tetap dicatat setiap kali fitur baru masuk, sebagai informasi dan pendeteksi lonjakan, bukan syarat lulus. Ukuran `.exe` sekunder dan tanpa target keras.
-- **Arah:** Rust native, Slint 1.18.1, renderer software dikunci lewat kode (`BackendSelector`), femtovg dibuang dari daftar feature, integrasi Windows lewat crate `windows` (windows-rs 0.62.2).
-- **Pengalaman:** pertama kali memakai Rust. Shell: PowerShell. Editor: VS Code. Teks UI berbahasa Inggris, komentar kode berbahasa Indonesia.
-- **Status (21 Okt 2026): langkah 0-9 selesai (9a-9d), langkah 10a, 10b (probe) dan 10c (baca, bersihkan, kelompokkan notifikasi) selesai; **10d (notifikasi di UI) dan 10e (sakelar privasi di menu tray) selesai dan lolos uji pengguna (22 Okt 2026).** Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas, expand saat hover, ikon tray (Show / Hide, Autostart, Quit), autostart lewat registry. Media: judul, artis, dan status play/pause dipantau lewat **event SMTC** (satu worker thread, debounce 150 ms, dedup), dengan tiga tombol di pill (previous, play/pause, next). Notifikasi: `GetNotificationsAsync` **bisa membaca** isi notifikasi pada aplikasi unpackaged, tetapi registrasi event `NotificationChanged` **gagal\*\* (`Element not found`, 0x80070490), jadi pola event ala media tidak bisa dipakai untuk notifikasi.
-- **Angka terkini (build `dist`, setelah 10e, 22 Okt 2026):** `.exe` 7,45 MB; private working set idle 4,25 MB; commit idle 3,98 menjadi **5,49 MB**; working set total idle 29,75 MB; CPU tidak dilaporkan pada pengukuran ini. Dibanding titik terukur terakhir (9d-1: 2,93 / 3,98 / 25,42 MB) naik +1,32 MB private, +1,51 MB commit, +4,33 MB working set total; angka ini **gabungan 9d-2, 10d, dan 10e** karena ketiganya tidak pernah diukur sendiri. Kenaikan melewati derau (sekitar 0,2 MB) dan baru pertama kali sejak baseline langkah 8 (private 2,55 menjadi 4,25 MB). Dicatat sebagai informasi, bukan gagal, karena RAM fleksibel (tanpa ambang); lihat bagian "Hasil langkah 10e dan pengukuran RAM" untuk pembacaan dan opsi penyelidikan.
-- **Keputusan yang sudah diambil:** software renderer (2,3 MB vs 42 MB pada femtovg), femtovg dibuang, `opt-level = "z"`, profil `[profile.dist]` terpisah dari `release` (repo publik). **Dibalik di 9c (21 Okt 2026):** media dibaca lewat langganan event SMTC (worker thread permanen), bukan saat hover, karena teks tidak berubah saat lagu berganti selama pill expanded. Hover tetap mengirim `refresh()` ke worker sebagai jaring pengaman bila event terlewat. Biaya RAM terbukti dalam derau.
-- **Keputusan dan pekerjaan terbuka:**
-  1. Selesai: tidak ada anggaran RAM keras, tetap dicatat sebagai informasi.
-  2. Selesai: 9c dan 9d (lihat bagian "Hasil langkah 9c-9d" di bawah). RAM 9d-2 tidak pernah diukur sendiri; tercakup di pengukuran gabungan setelah 10e (bagian "Hasil langkah 10e dan pengukuran RAM").
-  3. **Langkah 10 lanjutan (notifikasi): desain diputuskan 21 Okt 2026 (disetujui pengguna lewat "lanjut").** Opsi B (baca saat expanded, tanpa event dan tanpa polling), privasi default nama aplikasi + judul tanpa isi (sakelar "tampilkan isi" di menu tray), tampilan berupa lencana jumlah yang beralih antara media dan daftar notifikasi. **10c selesai** (`notif.rs`, `notif_text.rs`). **10d dan 10e selesai** (22 Okt 2026): lencana jumlah, tampilan notifikasi yang bergantian dengan media, sakelar privasi di menu tray (registry `HKCU\Software\winisland`). Sisa terbuka: keputusan soal kenaikan RAM gabungan (+1,32 MB private sejak 9d-1).
-  4. Selesai: lisensi (opsi B) dan dokumen repo, commit `b2bdb01`. Sisa: cek lisensi transitif dengan `cargo-deny` atau `cargo-license` sebelum rilis.
-  5. Tes `drop-shadow-*` pada software renderer belum dilakukan (dokumentasi menyebut belum didukung).
-  6. Belum diuji: judul non-Latin (Jepang, Korea, emoji) di pill, pemutar yang melaporkan judul kosong, rendering emoji di software renderer (relevan untuk notifikasi). Multi-monitor dan fullscreen telah diuji dan lolos.
-- **Berkas lokal yang sengaja belum di-commit:** `run-all.ps1`, `measure.ps1`, `cleanup.ps1` di folder proyek (pengukuran; `run-all.ps1` mengubah `Cargo.toml` sementara).
-- **Langkah berikutnya (mulai sesi baru dari sini):** (1) commit dan push 10e serta dokumen ini; (2) putuskan apakah kenaikan RAM perlu diselidiki: ukur build per commit (`2e20893` = 9d-2, `4c353e9` = 10d, HEAD = 10e) dengan `measure.ps1` untuk mengetahui sumbernya, lalu pertimbangkan mitigasi (bagian "Hasil langkah 10e dan pengukuran RAM"); (3) kandidat berikutnya, belum dipilih: pesan di pill bila akses notifikasi dicabut (sekarang hanya log konsol), membuka tampilan notifikasi otomatis bila tidak ada media, memperbarui `README.md` untuk fitur baru, `cargo-deny` untuk lisensi transitif. Claude tidak bisa mengompilasi (sandbox bukan Windows, tanpa `cargo`): semua kode lewat `cargo check` pengguna. Kirim **berkas utuh** bila patch gagal (`git apply` pernah menolak patch yang utuh di sandbox karena berkas berubah saat diunduh).
-- **Cara kerja:** satu kelompok perubahan kecil, verifikasi dengan checklist, commit memakai pesan yang hanya mengklaim yang sudah dilaporkan, perbarui dokumen ini, baru lanjut. Verifikasi nama feature dan API di dokumentasi sesuai versi crate yang terpasang, jangan menebak (pelajaran dari `get()` vs `join()`).
-- **Peran Claude:** instruktur/analis kritis. Timbang pro-kontra sebelum merekomendasikan, sampaikan ketidaksetujuan bila perlu, dan akui bila data membantah dugaan sebelumnya.
+- **Proyek:** `winisland`, overlay ala Dynamic Island untuk Windows. Repo publik: <https://github.com/irfanadwifangga/winisland>. Lisensi MIT (atribusi Slint Royalty-free 2.0 lewat badge README). Dipakai pribadi dulu, kontributor diharapkan.
+- **Prioritas:** RAM idle terkecil. Metrik resmi: **private working set**, commit sebagai pembanding. **Tidak ada anggaran keras** (diputuskan 21 Okt 2026); angka dicatat per fitur sebagai informasi dan pendeteksi lonjakan. CPU idle harus tetap 0%. Ukuran `.exe` sekunder.
+- **Arah teknis:** Rust native, Slint 1.18.1, renderer software dikunci lewat kode (`BackendSelector`), femtovg dibuang, integrasi Windows lewat crate `windows` 0.62.2. Pembangunan pakai profil `dist`.
+- **Pengalaman:** pertama kali memakai Rust. Shell PowerShell, editor VS Code. Teks UI berbahasa Inggris, komentar kode berbahasa Indonesia.
+- **Status (22 Okt 2026): langkah 0-11 selesai, ditambah fitur setelahnya:**
+  - Overlay tersembunyi dari taskbar dan Alt+Tab, idle berupa garis tipis di tepi atas (140x4), expand saat hover, ikon tray (Show/Hide, Autostart, tampilan isi notifikasi, pilihan monitor, hide saat fullscreen, Quit), autostart lewat registry.
+  - Media via event SMTC (worker thread, debounce 150 ms, dedup) dengan tombol previous/play-pause/next.
+  - Notifikasi: dibaca saat pill expanded (tanpa event, tanpa polling), lencana jumlah, tampilan notifikasi bergantian dengan media, otomatis beralih ke notifikasi bila tidak ada media (`8ab082e`), sakelar privasi isi pesan.
+  - Multi-monitor dan DPI (`12da5b5`), auto-hide saat aplikasi fullscreen (`628f719`); keduanya lolos uji pengguna.
+- **Angka terkini (build `dist`):** `.exe` sekitar 7,45 MB; private working set idle sekitar 2,9 MB tanpa fetch notifikasi, sekitar 4,3 MB setelah fetch notifikasi pertama. Hasil bisect (22 Okt 2026) membuktikan seluruh kenaikan +1,4 MB berasal dari jalur WinRT pembacaan notifikasi. **Pengguna menerima kenaikan itu.** CPU idle 0%.
+- **Keputusan yang sudah diambil:** software renderer; media lewat event SMTC dengan worker permanen; notifikasi dibaca saat expanded karena `NotificationChanged` gagal (0x80070490) pada aplikasi unpackaged; privasi default nama aplikasi + judul tanpa isi; satu proses tray (bukan Windows Service); jendela mengikuti state (idle = garis tipis).
+- **Fase 2 (dimulai 22 Okt 2026, lihat Bagian 9):** state **Home** (jam, notifikasi 1 baris, statistik sistem), tab navigasi (Kalender, Timer/Stopwatch/Jadwal, Email atau widget berguna lain), dan **ukuran island dinamis** mengikuti konten. UI dan font yang kurang rapi **sengaja ditunda ke backlog**. Perencanaan RAM untuk fitur Fase 2 diabaikan dulu; diukur setelah fitur jalan.
+- **Pekerjaan terbuka:**
+  1. Selesai (22 Okt 2026): tiga keputusan di 9.6 (media di dalam Home, mengingat tab terakhir di memori, jadwal di berkas teks `%APPDATA%`). Langkah 12 siap dimulai.
+  2. Langkah 12-17 (Bagian 9).
+  3. Backlog (9.8), termasuk `cargo-deny` sebelum rilis biner pertama.
+- **Berkas lokal yang sengaja belum di-commit:** `run-all.ps1`, `measure.ps1`, `cleanup.ps1`.
+- **Cara kerja:** satu kelompok perubahan kecil, verifikasi dengan checklist, commit dengan pesan yang hanya mengklaim yang sudah dilaporkan, perbarui dokumen ini, baru lanjut. Claude tidak bisa mengompilasi (sandbox bukan Windows): semua kode lewat `cargo check` pengguna, kirim berkas utuh bila patch gagal. Verifikasi nama feature dan API di dokumentasi sesuai versi crate, jangan menebak.
+- **Peran Claude:** instruktur/analis kritis. Timbang pro-kontra sebelum merekomendasikan, sampaikan ketidaksetujuan bila perlu, akui bila data membantah dugaan sebelumnya.
 
 ---
 
@@ -817,3 +818,90 @@ Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
 - **Verifikasi:** 27 unit tests lolos (7 tes baru di `fullscreen.rs`), `cargo check` dan `cargo fmt` bersih.
 - **Uji Pengguna (22 Okt 2026): Lolos.** Mode fullscreen video browser (tombol F) menyembunyikan strip idle ~0,5 dtk, tombol Esc memunculkan kembali, sakelar "Hide in fullscreen" di menu tray berfungsi mematikan auto-hide saat dibutuhkan.
 
+## 9. Fase 2: Home, tab, dan ukuran dinamis (22 Okt 2026)
+
+### 9.1 Permintaan pengguna
+
+1. **State Home.** Saat tidak ada aktivitas, island masuk ke Home, bukan "Nothing playing". Home menampilkan jam, notifikasi 1 baris, dan statistik RAM, CPU, GPU, baterai (dan metrik lain yang berguna).
+2. **Tab** untuk berpindah dari Home: Kalender; Timer/Stopwatch/Jadwal; Email atau hal lain yang berguna.
+3. **Ukuran island menyesuaikan konten.** Batas ukuran lama (360x116) boleh dilampaui.
+4. **Ditunda ke backlog:** perapihan UI (sekarang masih berantakan) dan font yang sebagian tidak terbaca. Perencanaan RAM Fase 2 diabaikan dulu dan diuji belakangan.
+
+### 9.2 Tafsir yang saya pakai (koreksi bila keliru)
+
+- Garis idle di tepi atas **tetap ada**. "Home" adalah isi tampilan saat pill di-expand dan tidak ada aktivitas lain, menggantikan "Nothing playing". Bila yang dimaksud Home selalu tampil tanpa perlu hover, itu mengubah keputusan klik-tembus (bagian 8) dan harus dibahas lebih dulu.
+- Fitur notifikasi dan media yang sudah selesai dipertahankan; keduanya dipindah ke dalam kerangka Home/tab, bukan dibuang.
+
+### 9.3 Analisis kritis: tiga benturan dengan keputusan sebelumnya
+
+| Benturan | Mengapa | Penyelesaian yang diusulkan |
+| --- | --- | --- |
+| **Ukuran dinamis vs klik-tembus.** Ukuran jendela sama dengan area yang menghalangi klik (temuan langkah 3, terkonfirmasi). Island yang lebih besar menutupi lebih banyak jendela di bawahnya. | Pro dinamis: sesuai konsep, konten tidak dipaksa muat. Kontra: tiap piksel tambahan di tepi atas tengah memblokir tombol aplikasi lain. | Boleh membesar, tetapi **per state ada ukuran sendiri dan ada batas atas** (usulan awal 480x300 logis, belum disepakati). Mekanisme yang sudah terbukti dipertahankan: jendela membesar sebelum animasi, mengecil 280 ms setelah collapse. |
+| **Statistik live vs CPU idle 0%.** CPU, RAM, jam butuh pembaruan berkala. | Polling terus-menerus merusak prinsip utama proyek. | **Polling hanya selama pill expanded**: timer Slint mulai saat expand, berhenti saat collapse. Saat idle tidak ada timer. Jam cukup tick 1 detik, dan hanya saat expanded. |
+| **Konstanta ukuran tersebar.** `FULL_H` di `main.rs` dan angka 8 px ada di dua tempat (`main.slint` dan `main.rs`, sudah tercatat di bagian 8). Ukuran per state akan melipatgandakan masalah ini. | Ukuran harus dua arah sinkron. | Langkah 12 merapikan: **Slint menjadi sumber kebenaran ukuran** per state, Rust hanya membaca ukuran lalu memanggil `place()`. Pendekatan ini belum diuji; verifikasi cara membaca properti Slint dari Rust (`changed` callback) di dokumentasi 1.18.1 sebelum menulis. |
+
+### 9.4 Rancangan tampilan
+
+**Kerangka:** bar tab di bagian atas pill (Home | Calendar | Timer | Mail), konten di bawahnya, tinggi mengikuti tab aktif. Tab terakhir yang dipakai diingat di memori dan dipulihkan setiap pill di-expand.
+
+**Home (tab bawaan):**
+
+- Baris atas: jam (HH:MM, detik opsional) dan tanggal.
+- Satu baris notifikasi terbaru (aplikasi + judul, elide). Klik membuka tampilan notifikasi yang sudah ada.
+- Statistik: CPU %, RAM %, baterai % (dan status mengisi). GPU menyusul (langkah 16). Bila perangkat tanpa baterai, baris baterai disembunyikan.
+- Bila ada sesi media: baris media (judul + tiga tombol yang sudah ada) muncul di Home. Ini memakai ukuran dinamis (Home lebih tinggi saat media ada). Lihat keputusan 1 di 9.6.
+
+**Kalender:** grid bulan dihitung lokal dari tanggal sistem (hari dalam seminggu dihitung manual atau lewat `GetLocalTime`, tanpa dependensi baru). Acara nyata dari kalender Windows belum dirancang: API Appointments mungkin butuh package identity (**belum diverifikasi**, probe seperti 10a bila diinginkan).
+
+**Timer/Stopwatch/Jadwal:**
+
+- Stopwatch dan timer murni lokal. Waktu berjalan dihitung dari `Instant` (selisih), bukan dari hitungan tick, sehingga tetap benar walau tick berhenti saat collapse.
+- **Alarm timer selesai** saat pill collapsed: dibangunkan satu kali pada waktu target (satu thread tidur atau waitable timer, tanpa polling), lalu expand otomatis beberapa detik. Dugaan: CPU idle tetap 0%; **harus diukur**.
+- Jadwal (pengingat): butuh penyimpanan. Lihat keputusan 3.
+
+**Email/lainnya:** slot tab dicadangkan. Email adalah fitur paling mahal di daftar ini (jaringan, TLS, OAuth, penyimpanan token, repo publik sehingga tidak boleh ada secret). Rekomendasi: kerjakan terakhir dan jadikan opsional; isi tab bisa ditentukan setelah langkah 15 selesai.
+
+### 9.5 Cara membaca statistik (perlu verifikasi sebelum menulis kode)
+
+| Metrik | Kandidat API | Catatan |
+| --- | --- | --- |
+| CPU % | `GetSystemTimes` (dua pembacaan, selisih) | Ringan, tanpa dependensi baru; butuh feature `windows` yang sesuai (verifikasi nama) |
+| RAM % | `GlobalMemoryStatusEx` | Ini beban memori sistem, bukan RAM proses winisland |
+| Baterai | `GetSystemPowerStatus` | Perangkat tanpa baterai mengembalikan status "tidak ada" |
+| GPU | PDH counter "GPU Engine" (lintas vendor) atau NVML (hanya NVIDIA) | Paling berisiko; vendor dan versi Windows memengaruhi. **Probe dulu di mesin pengguna** (langkah 16), jangan ditebak |
+
+### 9.6 Keputusan pengguna (22 Okt 2026)
+
+1. **Posisi media: baris di dalam Home** saat ada sesi (ukuran Home dinamis). Tombol media dan tampilan notifikasi lama dipindah ke kerangka ini.
+2. **Tab saat expand: mengingat tab terakhir** (berbeda dari rekomendasi awal "selalu Home"). Tafsir yang dipakai: diingat **selama aplikasi berjalan, di memori**, tidak disimpan ke registry. Konsekuensi yang diterima: setelah dibuka dari tab Timer, pill langsung menampilkan Timer; Home hanya terlihat bila tab Home yang terakhir dipakai. Mengingat lintas restart bisa ditambah nanti bila diinginkan (satu nilai di `HKCU\Software\winisland`).
+3. **Penyimpanan jadwal: berkas teks sederhana** di `%APPDATA%\winisland\`, tanpa dependensi baru (sesuai rekomendasi). Format dan parsing ditulis sendiri; tulis ke berkas sementara lalu ganti nama supaya tidak rusak bila proses mati saat menulis.
+
+### 9.7 Urutan pengerjaan (tambahkan ke tabel "Log langkah")
+
+| # | Isi | Status |
+| --- | --- | --- |
+| 12 | Kerangka: model state (tab), ukuran jendela per state dengan Slint sebagai sumber kebenaran, batas ukuran | Direncanakan |
+| 13 | Home: jam, notifikasi 1 baris, statistik CPU/RAM/baterai, timer polling hanya saat expanded; ukur RAM dan CPU | Direncanakan |
+| 14 | Bar tab + Kalender (grid bulan lokal) | Direncanakan |
+| 15 | Timer dan Stopwatch (alarm dengan peek), lalu Jadwal | Direncanakan |
+| 16 | Statistik GPU (probe dulu, lalu implementasi bila layak) | Direncanakan |
+| 17 | Tab Email atau lainnya (probe kelayakan, putuskan setelah 15) | Direncanakan |
+
+Tiap langkah memakai alur lama: perubahan kecil, checklist, commit, perbarui dokumen. Langkah 12 harus lolos uji klik-tembus dan multi-monitor yang sudah ada sebelum lanjut ke 13.
+
+### 9.8 Backlog (disepakati ditunda)
+
+- Perapihan UI (tata letak, jarak, warna), termasuk angka tata letak 10d yang masih perkiraan.
+- Font yang sebagian tidak terbaca.
+- Pesan di pill bila akses notifikasi dicabut (sekarang hanya log konsol).
+- Uji judul non-Latin dan emoji di software renderer; uji `drop-shadow-*`.
+- Penjaga `FETCHING` pada media bila thread panic (prioritas rendah).
+- Perbarui `README.md` untuk fitur baru dan jalankan `cargo-deny` atau `cargo-license` sebelum rilis biner pertama.
+- Penyelidikan RAM Fase 2: diukur setelah fitur jalan, bukan direncanakan sekarang.
+
+### 9.9 Risiko Fase 2
+
+1. Home dan tab menambah banyak kode UI sekaligus; kerjakan per langkah di 9.7, jangan sekaligus.
+2. Ukuran dinamis tanpa batas atas bisa membuat island menutupi tombol aplikasi lain.
+3. GPU dan Email bisa gagal di probe; rencana tidak boleh bergantung pada keduanya.
+4. Semua kode Rust tetap hanya diverifikasi lewat `cargo check` dan uji pengguna; perilaku UI yang tidak bisa dirender Claude harus dikonfirmasi lewat laporan pengguna.
