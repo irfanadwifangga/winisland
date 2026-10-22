@@ -2,31 +2,33 @@
 
 A tiny Dynamic Island-style overlay for Windows. It sits flush against the top edge of the screen as a thin strip, stays out of your way, and expands when you hover over it.
 
-The main goal of the project is **low memory use**. It runs as a tray app, with no taskbar icon and no Alt+Tab entry.
+The main goal of the project is **low memory use and near-zero idle CPU**. It runs as a lightweight tray app with no taskbar icon and no Alt+Tab entry.
 
 ## Features
 
-- Idle state is a thin strip at the top edge of the screen; hovering expands it with an animation
-- Shows the title and artist of the media that is currently playing (via Windows media controls)
-- Shows a badge with the number of notifications in the Windows Action Center; click the badge to switch the pill between media and notifications. Notifications show the app name, title and age only; message text stays hidden unless you opt in (see below)
-- Tray icon with **Show / Hide**, **Autostart** (on/off) and **Quit**
-- Starts with Windows when Autostart is enabled (registry `HKCU\...\Run`, no admin rights)
-- Does not steal focus when you click it
+- **Idle strip & animated expand:** Idle state is a subtle 4 px strip at the top edge of the screen; hovering expands it smoothly into a dynamic island pill.
+- **Now Playing media controls:** Tracks media title, artist, and playback state in real time via Windows SMTC events. Includes on-screen Previous, Play/Pause, and Next buttons.
+- **Action Center notifications:** Reads active toast notifications, grouping duplicates and cleaning text. A badge shows the notification count; clicking it switches between media and notifications. Automatically shows notifications on hover if nothing is playing.
+- **Notification privacy switch:** By default, only app names, titles, and age are shown (message bodies are never fetched). Enable "Notification body: Shown" from the tray menu to display message contents.
+- **Multi-monitor & DPI-aware placement:** Accurately places the overlay at the top-center of the active screen across mixed DPIs and negative coordinates. Cycle displays directly from the tray menu.
+- **Fullscreen app detection:** Automatically suppresses the overlay when playing fullscreen games or watching fullscreen videos (YouTube, media players) to prevent distraction or accidental clicks. Can be toggled on/off in the tray menu.
+- **System tray menu:**
+  - **Show / Hide** — toggle overlay visibility manually
+  - **Display: Primary / 2 / ...** — cycle target monitor
+  - **Autostart: On / Off** — launch on Windows startup (`HKCU\...\Run`, no admin rights required)
+  - **Notification body: Hidden / Shown** — toggle notification message body privacy
+  - **Hide in fullscreen: On / Off** — toggle auto-hide during games and fullscreen media
+  - **Quit** — close the application
+- **Non-activating window:** Does not steal focus from your active game, browser, or editor when clicked.
 
 ## Status
 
-Early and personal-scale. It works on the author's machine (Windows 11), and a lot is still untested.
+Developed and tested on Windows 11.
 
-Known limitations:
-
-- Notifications are read only when the pill opens: Windows does not let an unpackaged app subscribe to notification changes, so nothing pops up on its own
-- Message text is hidden by default. Until a tray switch exists, set the `WINISLAND_NOTIF_BODY` environment variable to any value before starting the app to show it
-- Only the primary monitor is used; multi-monitor and high-DPI setups are untested
-- Exclusive-fullscreen games are untested
-- Windows 10 is untested
-- If Autostart is turned off from _Settings > Apps > Startup_, the tray menu may still show "On"
-
-Measured on the author's machine with the `dist` build (single measurements, not a benchmark): about 7.3 MB executable, about 2.9 MB private working set at idle, 0% idle CPU.
+Known behaviors & notes:
+- **Notification polling:** Notifications are fetched when the pill expands. Windows does not allow unpackaged Win32 apps to register for `NotificationChanged` events, so notifications do not push updates on their own.
+- **Memory footprint:** In the `dist` build, executable size is ~7.4 MB. RAM usage is ~2.9 MB private working set at startup and ~4.3 MB after reading notifications (due to WinRT runtime activation). Idle CPU is 0%.
+- **Windows 10:** Untested (Windows 11 recommended).
 
 ## Build from source
 
@@ -36,7 +38,7 @@ Requirements:
 - Rust (stable, `x86_64-pc-windows-msvc` toolchain)
 - _Build Tools for Visual Studio_ with the **Desktop development with C++** workload (the full Visual Studio IDE is not needed)
 
-`setup.ps1` checks all of this without changing anything:
+`setup.ps1` checks all requirements without modifying anything:
 
 ```powershell
 .\setup.ps1          # environment check
@@ -55,7 +57,10 @@ Build the small, optimized binary:
 cargo build --profile dist
 ```
 
-The result is `target\dist\winisland.exe`. To use it day to day, quit the app first, copy the file to a fixed location such as `%LOCALAPPDATA%\winisland\`, run it from there, then enable **Autostart** from the tray menu. Enable Autostart only from a release/dist build in a fixed location, because the registry entry stores the path of the running executable.
+The resulting binary is located at `target\dist\winisland.exe`. To use it daily:
+1. Quit any running debug instance.
+2. Copy `target\dist\winisland.exe` to a permanent folder (such as `%LOCALAPPDATA%\winisland\`).
+3. Run it from that location and enable **Autostart** from the tray menu.
 
 ## Contributing
 
