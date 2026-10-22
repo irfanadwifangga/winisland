@@ -10,7 +10,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, IsIconic, IsWindowVisible, GWL_STYLE, WS_CAPTION, WS_CHILD,
 };
 
-use crate::monitor::{self, MonitorBounds};
+use super::monitor::{self, MonitorBounds};
 
 /// Mengecek apakah rectangle jendela menutupi seluruh area monitor tertentu.
 pub fn rect_covers_monitor(rect: &RECT, mon: &MonitorBounds) -> bool {

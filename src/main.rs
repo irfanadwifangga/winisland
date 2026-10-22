@@ -15,8 +15,8 @@
 //!
 //! Renderer dikunci ke software lewat `BackendSelector` supaya pemakaian RAM tetap kecil.
 
-use core::ffi::c_void;
 use std::cell::{Cell, RefCell};
+use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -30,24 +30,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 slint::include_modules!();
-mod autostart;
-mod calendar;
-mod config;
-mod fullscreen;
-mod gpu;
-mod media;
-mod monitor;
-mod stats;
-mod tasks;
-mod timer;
 
-mod notif;
-// `Snapshot::groups` hanya dibaca oleh `notif::debug_run` (build debug).
-#[cfg_attr(not(debug_assertions), allow(dead_code))]
-mod notif_text;
+mod core;
+mod plugins;
 
-use notif::Fetch;
-use notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
+use core::{autostart, config, fullscreen, monitor};
+use plugins::notif::Fetch;
+use plugins::notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
+use plugins::{calendar, gpu, media, notif, stats, tasks, timer};
 
 /// Jumlah maksimum percobaan memasang style jendela. Handle jendela baru tersedia
 /// setelah event loop berjalan, jadi pemasangan perlu diulang sampai berhasil.

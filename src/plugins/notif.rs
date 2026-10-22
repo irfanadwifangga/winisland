@@ -15,7 +15,7 @@ use windows::UI::Notifications::Management::{
 };
 use windows::UI::Notifications::{KnownNotificationBindings, NotificationKinds, UserNotification};
 
-use crate::notif_text::{group, RawNotif, Snapshot};
+use super::notif_text::{group, RawNotif, Snapshot};
 
 /// Jumlah kelompok maksimum yang dikembalikan ke UI.
 const MAX_ITEMS: usize = 5;
@@ -97,10 +97,10 @@ pub fn fetch(include_body: bool) -> Result<Fetch> {
 /// Isi pesan hanya dibaca bila sakelar privasi aktif (`config::show_body`, dari menu tray).
 #[cfg(debug_assertions)]
 pub fn debug_run() {
-    use crate::notif_text::{age_secs, ticks_from_unix_secs};
+    use super::notif_text::{age_secs, ticks_from_unix_secs};
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-    let include_body = crate::config::show_body();
+    let include_body = crate::core::config::show_body();
     eprintln!("[notif] include_body={include_body}");
 
     for round in 1..=3 {
