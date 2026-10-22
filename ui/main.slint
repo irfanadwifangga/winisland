@@ -1,13 +1,14 @@
 import { PlayIcon } from "components/icons.slint";
 import { TabItem } from "components/buttons.slint";
-import { NotifRow, CalendarCell } from "models.slint";
+import { NotifRow, CalendarCell, TaskRow } from "models.slint";
+import { TasksView } from "views/tasks_view.slint";
 import { HomeView } from "views/home_view.slint";
 import { NotifView } from "views/notif_view.slint";
 import { CalendarView } from "views/calendar_view.slint";
 import { TimerView } from "views/timer_view.slint";
 
 // Re-export struct agar dapat diakses oleh kode Rust melalui slint::include_modules!().
-export { NotifRow, CalendarCell }
+export { NotifRow, CalendarCell, TaskRow }
 
 export component MainWindow inherits Window {
     default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
@@ -81,6 +82,16 @@ export component MainWindow inherits Window {
     callback stopwatch-pause();
     callback stopwatch-reset();
 
+        // --- tasks (Langkah 17) ---
+    in-out property <[TaskRow]> tasks: [];
+    in-out property <int> tasks-remaining: 0;
+    in-out property <int> tasks-completed: 0;
+
+    callback task-add(string);
+    callback task-toggle(int);
+    callback task-delete(int);
+    callback task-clear-completed();
+
     // --- model tab dan ukuran dinamis (Langkah 12) ---
     // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
     in-out property <int> active-tab: 0;
@@ -101,7 +112,7 @@ export component MainWindow inherits Window {
             ) :
             root.active-tab == 1 ? 260px :
             root.active-tab == 2 ? 185px :
-            140px
+            240px
         ) : (root.peek ? 32px : 4px);
 
     // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
@@ -245,7 +256,7 @@ export component MainWindow inherits Window {
                 }
 
                 TabItem {
-                    text: "Mail";
+                    text: "Tasks";
                     active: root.active-tab == 3;
                     clicked => { root.active-tab = 3; }
                 }
@@ -322,28 +333,18 @@ export component MainWindow inherits Window {
                 stopwatch-reset => { root.stopwatch-reset(); }
             }
 
-            // --- konten tab Mail (active-tab == 3) ---
-            if root.expanded && root.active-tab == 3: VerticalLayout {
+            // --- konten tab Tasks (active-tab == 3, Langkah 17) ---
+            if root.expanded && root.active-tab == 3: TasksView {
                 y: 32px;
                 height: parent.height - 32px;
-                alignment: center;
-                spacing: 6px;
-                padding: 16px;
+                tasks: root.tasks;
+                remaining-count: root.tasks-remaining;
+                completed-count: root.tasks-completed;
 
-                Text {
-                    text: "Mail & Tasks";
-                    color: white;
-                    font-size: 16px;
-                    font-weight: 700;
-                    horizontal-alignment: center;
-                }
-
-                Text {
-                    text: "Integration arriving in Step 17";
-                    color: #888888;
-                    font-size: 12px;
-                    horizontal-alignment: center;
-                }
+                task-add(text) => { root.task-add(text); }
+                task-toggle(id) => { root.task-toggle(id); }
+                task-delete(id) => { root.task-delete(id); }
+                task-clear-completed => { root.task-clear-completed(); }
             }
         }
     }

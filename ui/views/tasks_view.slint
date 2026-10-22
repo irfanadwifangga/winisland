@@ -1,0 +1,232 @@
+import { TaskRow } from "../models.slint";
+
+export component TasksView inherits VerticalLayout {
+    in property <[TaskRow]> tasks: [];
+    in property <int> remaining-count: 0;
+    in property <int> completed-count: 0;
+
+    callback task-add(string);
+    callback task-toggle(int);
+    callback task-delete(int);
+    callback task-clear-completed();
+
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 4px;
+    padding-bottom: 8px;
+    spacing: 8px;
+
+    // Baris input tugas baru
+    HorizontalLayout {
+        height: 28px;
+        spacing: 6px;
+
+        input := TextInput {
+            height: 28px;
+            font-size: 12px;
+            color: #f1f5f9;
+            vertical-alignment: center;
+
+            Rectangle {
+                z: -1;
+                border-radius: 6px;
+                background: #1c1c1e;
+                border-width: 1px;
+                border-color: input.has-focus ? #3b82f6 : #2c2c2e;
+            }
+
+            // Placeholder buatan bila teks kosong
+            if input.text == "" && !input.has-focus: Text {
+                x: 8px;
+                text: "Add a new task...";
+                color: #636366;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+
+            accepted => {
+                if input.text != "" {
+                    root.task-add(input.text);
+                    input.text = "";
+                }
+            }
+        }
+
+        // Tombol Tambah (+)
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: add_area.has-hover ? #2563eb : #1d4ed8;
+
+            Text {
+                text: "+";
+                color: white;
+                font-size: 16px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            add_area := TouchArea {
+                clicked => {
+                    if input.text != "" {
+                        root.task-add(input.text);
+                        input.text = "";
+                    }
+                }
+            }
+        }
+    }
+
+    // Daftar Tugas
+    Flickable {
+        vertical-stretch: 1;
+
+        if root.tasks.length == 0: VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+
+            Text {
+                text: "No tasks yet";
+                color: #8e8e93;
+                font-size: 12px;
+                font-weight: 500;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Type a task above and press Enter";
+                color: #48484a;
+                font-size: 10px;
+                horizontal-alignment: center;
+            }
+        }
+
+        if root.tasks.length > 0: VerticalLayout {
+            spacing: 2px;
+            alignment: start;
+
+            for task in root.tasks: Rectangle {
+                height: 28px;
+                border-radius: 6px;
+                background: row_area.has-hover ? #1c1c1e : transparent;
+
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 4px;
+                    spacing: 8px;
+                    alignment: space-between;
+
+                    // Checkbox bulat dan Teks
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        // Checkbox
+                        Rectangle {
+                            y: (parent.height - self.height) / 2;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 8px;
+                            background: task.done ? #22c55e : transparent;
+                            border-width: 1.5px;
+                            border-color: task.done ? #22c55e : #636366;
+
+                            if task.done: Text {
+                                text: "✓";
+                                color: white;
+                                font-size: 10px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+
+                            check_area := TouchArea {
+                                clicked => {
+                                    root.task-toggle(task.id);
+                                }
+                            }
+                        }
+
+                        // Teks tugas
+                        Text {
+                            text: task.text;
+                            color: task.done ? #636366 : #f1f5f9;
+                            font-size: 12px;
+                            font-weight: task.done ? 400 : 500;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+
+                    // Tombol Hapus (×)
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 20px;
+                        height: 20px;
+                        border-radius: 4px;
+                        background: del_area.has-hover ? #ef4444 : transparent;
+
+                        Text {
+                            text: "×";
+                            color: del_area.has-hover ? white : #636366;
+                            font-size: 14px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        del_area := TouchArea {
+                            clicked => {
+                                root.task-delete(task.id);
+                            }
+                        }
+                    }
+                }
+
+                row_area := TouchArea {
+                    clicked => {
+                        root.task-toggle(task.id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Baris footer (Ringkasan & Clear Completed)
+    HorizontalLayout {
+        height: 20px;
+        alignment: space-between;
+
+        Text {
+            text: "\{root.remaining-count} remaining";
+            color: #8e8e93;
+            font-size: 10px;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+
+        if root.completed-count > 0: Rectangle {
+            border-radius: 4px;
+            background: clear_area.has-hover ? #2c2c2e : transparent;
+
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                Text {
+                    text: "Clear completed (\{root.completed-count})";
+                    color: clear_area.has-hover ? #f87171 : #8e8e93;
+                    font-size: 10px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+            }
+
+            clear_area := TouchArea {
+                clicked => {
+                    root.task-clear-completed();
+                }
+            }
+        }
+    }
+}

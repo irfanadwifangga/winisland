@@ -7546,7 +7546,7 @@ Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
 
 
 
-| 17 | Tab Email atau lainnya (probe kelayakan, putuskan setelah 15) | Direncanakan |
+| 17 | Tab Tasks / To-Do List lokal (tambah/centang/hapus, persisten JSON) | Selesai (58 tes lolos) |
 
 
 
