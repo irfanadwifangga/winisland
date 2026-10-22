@@ -170,10 +170,11 @@ export component MainWindow inherits Window {
     property <bool> hovered: area.has-hover;
     changed hovered => { root.hover-changed(root.hovered); }
 
-    // Setiap kali pill dibuka, mulai dari tampilan media dan item pertama.
+    // Setiap kali pill dibuka, mulai dari tampilan notifikasi bila tidak ada media tetapi
+    // ada notifikasi; bila ada media atau tidak ada notifikasi, mulai dari tampilan media.
     changed expanded => {
         if (root.expanded) {
-            root.show-notifs = false;
+            root.show-notifs = !root.has-media && root.notif-total > 0;
             root.notif-index = 0;
         }
     }

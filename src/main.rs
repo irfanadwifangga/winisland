@@ -211,6 +211,11 @@ fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
     if ui.get_notif_index() >= len {
         ui.set_notif_index(0);
     }
+    // Bila sedang terbuka, tidak ada media aktif, dan baru saja terdeteksi ada notifikasi:
+    // beralih ke tampilan notifikasi otomatis daripada membiarkan kosong (Nothing playing).
+    if ui.get_expanded() && !ui.get_has_media() && total > 0 && !ui.get_show_notifs() {
+        ui.set_show_notifs(true);
+    }
 }
 
 fn main() -> Result<(), slint::PlatformError> {
