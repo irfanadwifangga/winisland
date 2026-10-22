@@ -173,7 +173,14 @@ export component MainWindow inherits Window {
     preferred-width: 140px;
     preferred-height: 4px;
 
+    // --- model 3-state (Idle -> Peek -> Expanded) ---
+    // true bila kursor mengarah ke strip tepi atas (mode intip tipis dengan jam)
+    in-out property <bool> peek: false;
+    // true bila pill diklik dan terbuka penuh menjadi dynamic island
     in-out property <bool> expanded: false;
+    // teks jam digital untuk mode peek dan home (mis. "13:05")
+    in-out property <string> clock-text: "12:00";
+
     in-out property <string> track-title: "";
     in-out property <string> track-artist: "";
     // true bila ada sesi media aktif; false menyembunyikan tombol kontrol
@@ -195,25 +202,30 @@ export component MainWindow inherits Window {
     // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
     in-out property <int> active-tab: 0;
 
-    // Dimensi target pill saat expanded sesuai tab aktif dan konten
+    // Dimensi target pill saat peek atau expanded sesuai tab aktif dan konten
     property <length> target-pill-w:
-        root.active-tab == 0 ? (root.has-media ? 380px : 360px) :
-        root.active-tab == 1 ? 380px :
-        root.active-tab == 2 ? 360px :
-        360px;
+        root.expanded ? (
+            root.active-tab == 0 ? (root.has-media ? 380px : 360px) :
+            root.active-tab == 1 ? 380px :
+            root.active-tab == 2 ? 360px :
+            360px
+        ) : (root.peek ? 150px : 140px);
 
     property <length> target-pill-h:
-        root.active-tab == 0 ? (root.has-media ? 160px : 130px) :
-        root.active-tab == 1 ? 180px :
-        root.active-tab == 2 ? 140px :
-        140px;
+        root.expanded ? (
+            root.active-tab == 0 ? (root.has-media ? 160px : 130px) :
+            root.active-tab == 1 ? 180px :
+            root.active-tab == 2 ? 140px :
+            140px
+        ) : (root.peek ? 26px : 4px);
 
     // Ukuran jendela yang diminta (dalam piksel logis). Slint adalah sumber kebenaran.
-    // Saat expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
-    out property <length> requested-width: root.expanded ? root.target-pill-w : 140px;
-    out property <length> requested-height: root.expanded ? (root.target-pill-h + 8px) : 4px;
+    // Saat peek atau expanded, tinggi jendela mencakup celah floating 8 px dari tepi atas.
+    out property <length> requested-width: root.target-pill-w;
+    out property <length> requested-height: (root.expanded || root.peek) ? (root.target-pill-h + 8px) : 4px;
 
     callback hover-changed(bool);
+    callback expand-clicked();
     callback play-pause();
     callback skip-next();
     callback skip-previous();
@@ -246,9 +258,9 @@ export component MainWindow inherits Window {
     area := TouchArea {
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: root.expanded ? 8px : 0px;
-            width: root.expanded ? root.target-pill-w : 140px;
-            height: root.expanded ? root.target-pill-h : 4px;
+            y: (root.expanded || root.peek) ? 8px : 0px;
+            width: root.target-pill-w;
+            height: root.target-pill-h;
             border-radius: min(self.height / 2, 28px);
             background: black;
             clip: true;
@@ -256,6 +268,51 @@ export component MainWindow inherits Window {
             animate width, height, y {
                 duration: 250ms;
                 easing: ease-out;
+            }
+
+            // --- mode Peek (hover, belum diklik): tampilkan jam dan indikator ringkas ---
+            if root.peek && !root.expanded: Rectangle {
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8px;
+
+                    // ikon musik kecil bila sedang memutar lagu
+                    if root.has-media && root.playing: Rectangle {
+                        width: 8px;
+                        height: 10px;
+                        y: (parent.height - self.height) / 2;
+                        PlayIcon {
+                            icon-color: #4ade80;
+                            width: 8px;
+                            height: 10px;
+                        }
+                    }
+
+                    Text {
+                        text: root.clock-text;
+                        color: white;
+                        font-size: 13px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+
+                    // titik merah kecil bila ada notifikasi aktif
+                    if root.notif-total > 0: Rectangle {
+                        width: 6px;
+                        height: 6px;
+                        border-radius: 3px;
+                        background: #d64545;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+
+                // Klik di mode peek untuk expand penuh ke dynamic island
+                TouchArea {
+                    clicked => {
+                        root.expanded = true;
+                        root.expand-clicked();
+                    }
+                }
             }
 
             // --- bar tab navigasi (hanya tampil saat expanded) ---

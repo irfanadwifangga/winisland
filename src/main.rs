@@ -54,8 +54,46 @@ const RETRY_MS: u64 = 50;
 /// Nilai aktual per state ditentukan oleh Slint sebagai sumber kebenaran (Langkah 12).
 pub const MIN_WINDOW_W: f32 = 140.0;
 pub const MIN_WINDOW_H: f32 = 4.0;
+pub const PEEK_WINDOW_W: f32 = 150.0;
+pub const PEEK_WINDOW_H: f32 = 34.0;
 pub const MAX_EXPANDED_W: f32 = 480.0;
 pub const MAX_EXPANDED_H: f32 = 300.0;
+
+/// Mengambil waktu lokal sistem saat ini dalam format "HH:MM".
+pub fn local_time_string() -> String {
+    #[repr(C)]
+    struct SystemTimeWin32 {
+        w_year: u16,
+        w_month: u16,
+        w_day_of_week: u16,
+        w_day: u16,
+        w_hour: u16,
+        w_minute: u16,
+        w_second: u16,
+        w_milliseconds: u16,
+    }
+
+    extern "system" {
+        fn GetLocalTime(lp_system_time: *mut SystemTimeWin32);
+    }
+
+    let mut st = SystemTimeWin32 {
+        w_year: 0,
+        w_month: 0,
+        w_day_of_week: 0,
+        w_day: 0,
+        w_hour: 0,
+        w_minute: 0,
+        w_second: 0,
+        w_milliseconds: 0,
+    };
+
+    unsafe {
+        GetLocalTime(&mut st);
+    }
+
+    format!("{:02}:{:02}", st.w_hour, st.w_minute)
+}
 
 /// Membatasi ukuran jendela logis ke dalam batas aman (tidak melebihi batas atas).
 pub fn clamp_window_size(requested_w: f32, requested_h: f32) -> (f32, f32) {
@@ -68,6 +106,8 @@ pub fn clamp_window_size(requested_w: f32, requested_h: f32) -> (f32, f32) {
 fn current_window_size(ui: &MainWindow) -> (f32, f32) {
     if ui.get_expanded() {
         clamp_window_size(ui.get_requested_width(), ui.get_requested_height())
+    } else if ui.get_peek() {
+        (PEEK_WINDOW_W, PEEK_WINDOW_H)
     } else {
         (MIN_WINDOW_W, MIN_WINDOW_H)
     }
@@ -287,35 +327,65 @@ fn main() -> Result<(), slint::PlatformError> {
         ui.on_skip_previous(move || ctl.skip_previous());
     }
 
-    // --- hover expand/collapse
-    // Saat expand, jendela membesar dulu baru konten beranimasi. Saat collapse, konten
-    // mengecil dulu dan jendela baru mengecil setelah `SHRINK_DELAY_MS`.
+    // --- hover peek & click expand (model 3-state) ---
+    // Saat hover: masuk ke mode Peek (tampilkan jam, jendela tipis 34 px).
+    // Saat diklik: masuk ke mode Expanded (dynamic island penuh).
+    // Saat mouse keluar: collapse kembali ke garis idle 4 px setelah `SHRINK_DELAY_MS`.
     let shrink_timer = Rc::new(Timer::default());
+    let clock_timer = Rc::new(Timer::default());
     {
         let weak = ui.as_weak();
-        let timer = shrink_timer.clone();
+        let shrink_t = shrink_timer.clone();
+        let clock_t = clock_timer.clone();
         ui.on_hover_changed(move |hovered| {
             let Some(ui) = weak.upgrade() else { return };
             if hovered {
-                timer.stop();
-                ui.set_expanded(true); // aktifkan state expanded agar Slint menghitung ukuran target
-                let (w, h) = current_window_size(&ui);
-                place(&ui, w, h); // jendela membesar sesuai target dimensi tab aktif
-                media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
-                refresh_notifications(weak.clone()); // baca notifikasi di thread latar
+                shrink_t.stop();
+                if !ui.get_expanded() {
+                    // Masuk ke mode Peek: tampilkan jam, besarkan jendela ke ukuran Peek
+                    ui.set_peek(true);
+                    ui.set_clock_text(local_time_string().into());
+                    place(&ui, PEEK_WINDOW_W, PEEK_WINDOW_H);
+
+                    // Mulai timer jam 1 detik selama terlihat
+                    let clock_weak = weak.clone();
+                    clock_t.start(TimerMode::Repeated, Duration::from_secs(1), move || {
+                        if let Some(ui) = clock_weak.upgrade() {
+                            ui.set_clock_text(local_time_string().into());
+                        }
+                    });
+                }
             } else {
-                ui.set_expanded(false); // konten mengecil dulu
+                // Kursor keluar: collapse ke Idle
+                ui.set_expanded(false);
+                ui.set_peek(false);
+                clock_t.stop(); // matikan timer jam saat idle (0% CPU idle)
+
                 let weak2 = weak.clone();
-                timer.start(
+                shrink_t.start(
                     TimerMode::SingleShot,
                     Duration::from_millis(SHRINK_DELAY_MS),
                     move || {
                         if let Some(ui) = weak2.upgrade() {
-                            place(&ui, MIN_WINDOW_W, MIN_WINDOW_H); // baru jendela mengecil
+                            place(&ui, MIN_WINDOW_W, MIN_WINDOW_H);
                         }
                     },
                 );
             }
+        });
+    }
+
+    // --- callback saat pill di mode Peek diklik untuk expand ---
+    {
+        let weak = ui.as_weak();
+        let media_ctl = media_ctl.clone();
+        ui.on_expand_clicked(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            ui.set_expanded(true);
+            let (w, h) = current_window_size(&ui);
+            place(&ui, w, h);
+            media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
+            refresh_notifications(weak.clone()); // baca notifikasi di thread latar
         });
     }
 
@@ -418,6 +488,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     fs_suppressed.set(false);
                     if !user_hidden.get() {
                         ui.set_expanded(false);
+                        ui.set_peek(false);
                         let _ = ui.show();
                         try_apply(ui_weak.clone(), 1);
                     }
@@ -441,6 +512,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 // Hanya buka jika tidak sedang di-suppress oleh fullscreen
                 if !fs_suppressed.get() || !config::hide_on_fullscreen() {
                     ui.set_expanded(false);
+                    ui.set_peek(false);
                     let _ = ui.show();
                     // jendela bisa dibuat ulang saat show(): pasang style lagi
                     try_apply(weak.clone(), 1);
@@ -468,6 +540,7 @@ fn main() -> Result<(), slint::PlatformError> {
                     fs_suppressed.set(false);
                     if !user_hidden.get() {
                         ui.set_expanded(false);
+                        ui.set_peek(false);
                         let _ = ui.show();
                         try_apply(weak.clone(), 1);
                     }
@@ -484,9 +557,11 @@ fn main() -> Result<(), slint::PlatformError> {
                 if !user_hidden.get() {
                     if is_fs {
                         ui.set_expanded(false);
+                        ui.set_peek(false);
                         let _ = ui.hide();
                     } else {
                         ui.set_expanded(false);
+                        ui.set_peek(false);
                         let _ = ui.show();
                         try_apply(weak.clone(), 1);
                     }
@@ -535,5 +610,16 @@ mod tests {
         let (w, h) = clamp_window_size(50.0, 1.0);
         assert_eq!(w, MIN_WINDOW_W);
         assert_eq!(h, MIN_WINDOW_H);
+    }
+
+    #[test]
+    fn test_local_time_format() {
+        let s = local_time_string();
+        assert_eq!(s.len(), 5);
+        assert_eq!(&s[2..3], ":");
+        let h: u32 = s[0..2].parse().unwrap();
+        let m: u32 = s[3..5].parse().unwrap();
+        assert!(h < 24);
+        assert!(m < 60);
     }
 }

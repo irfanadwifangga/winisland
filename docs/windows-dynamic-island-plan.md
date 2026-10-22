@@ -832,6 +832,18 @@ Hash diambil dari `git log --oneline` pada repo (22 Okt 2026).
   - Placeholder dibuat untuk tab Calendar, Timer, dan Mail, siap diisi pada langkah 14, 15, dan 17.
 - **Verifikasi:** 30 unit tests lolos (3 tes baru untuk `clamp_window_size`), `cargo check` dan `cargo fmt` bersih.
 
+### Revisi UX: Model 3-State (Idle -> Hover: Peek Jam -> Click: Expand) (22 Okt 2026)
+
+- **Masalah:** Pada implementasi sebelumnya, setiap kursor menyentuh tepi atas layar, island langsung terbuka penuh (160-200 px), yang sering mengganggu pengguna saat ingin beralih tab browser atau klik title bar jendela lain (*accidental trigger*).
+- **Penyelesaian:**
+  - Menerapkan **3-State Model**:
+    1. **Idle (0% CPU):** Garis tipis 140x4 px di tepi atas layar.
+    2. **Peek (saat Hover):** Pill ramping 150x26 px (jendela 150x34 px) menampilkan jam digital `HH:MM` lokal, ikon musik kecil jika ada lagu aktif, dan titik merah jika ada notifikasi. Tidak menutupi tab browser.
+    3. **Expanded (saat Klik):** Dynamic Island penuh terbuka menampilkan tab navigasi (Home/Calendar/Timer/Mail), kontrol media, dan lencana notifikasi.
+  - Saat kursor keluar dari Peek tanpa klik, pill kembali ke garis idle 4 px setelah 280 ms.
+  - Timer jam 1 detik di Rust hanya berjalan saat Peek atau Expanded aktif, dan mati total saat Idle (menjaga CPU idle tetap 0%).
+- **Verifikasi:** 31 unit tests lolos (1 tes baru untuk `local_time_string`), `cargo check` dan `cargo fmt` bersih.
+
 ## 9. Fase 2: Home, tab, dan ukuran dinamis (22 Okt 2026)
 
 ### 9.1 Permintaan pengguna
