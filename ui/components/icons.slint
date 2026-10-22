@@ -1,0 +1,82 @@
+// Ikon digambar dari Rectangle (tanpa Path: Path di software renderer butuh feature
+// tambahan dan menambah dependensi). Segitiga didekati dengan strip vertikal 1 px
+// yang tingginya menurun.
+
+export component PlayIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    width: 12px;
+    height: 14px;
+
+    for i in 12: Rectangle {
+        x: i * 1px;
+        width: 1px;
+        height: 14px * (12 - i) / 12;
+        y: (14px - self.height) / 2;
+        background: root.icon-color;
+    }
+}
+
+// Ikon pause: dua batang vertikal.
+export component PauseIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    width: 12px;
+    height: 14px;
+
+    Rectangle {
+        x: 1px;
+        width: 4px;
+        height: parent.height;
+        background: root.icon-color;
+    }
+
+    Rectangle {
+        x: 7px;
+        width: 4px;
+        height: parent.height;
+        background: root.icon-color;
+    }
+}
+
+// Ikon next: segitiga menghadap kanan dan satu batang di kanannya.
+export component NextIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    width: 12px;
+    height: 14px;
+
+    for i in 9: Rectangle {
+        x: i * 1px;
+        width: 1px;
+        height: 14px * (9 - i) / 9;
+        y: (14px - self.height) / 2;
+        background: root.icon-color;
+    }
+
+    Rectangle {
+        x: 10px;
+        width: 2px;
+        height: parent.height;
+        background: root.icon-color;
+    }
+}
+
+// Ikon previous: satu batang di kiri dan segitiga menghadap kiri.
+export component PrevIcon inherits Rectangle {
+    in property <brush> icon-color: white;
+    width: 12px;
+    height: 14px;
+
+    Rectangle {
+        x: 0px;
+        width: 2px;
+        height: parent.height;
+        background: root.icon-color;
+    }
+
+    for i in 9: Rectangle {
+        x: 3px + i * 1px;
+        width: 1px;
+        height: 14px * (i + 1) / 9;
+        y: (14px - self.height) / 2;
+        background: root.icon-color;
+    }
+}

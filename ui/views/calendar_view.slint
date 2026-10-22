@@ -1,0 +1,148 @@
+import { CalendarCell } from "../models.slint";
+
+export component CalendarView inherits VerticalLayout {
+    in property <string> cal-title;
+    in property <[CalendarCell]> cal-cells;
+
+    callback cal-prev();
+    callback cal-next();
+    callback cal-today();
+
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    spacing: 4px;
+
+    // Baris navigasi bulan: [◀] October 2026 [▶] dan tombol Today
+    HorizontalLayout {
+        alignment: space-between;
+        height: 22px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+
+            // Tombol bulan sebelumnya
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 6px;
+                background: prev_touch.has-hover ? #2a2a2a : transparent;
+
+                Text {
+                    text: "◀";
+                    color: prev_touch.has-hover ? white : #a1a1aa;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                prev_touch := TouchArea {
+                    clicked => { root.cal-prev(); }
+                }
+            }
+
+            // Judul bulan
+            Text {
+                text: root.cal-title;
+                color: white;
+                font-size: 13px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+
+            // Tombol bulan berikutnya
+            Rectangle {
+                width: 22px;
+                height: 22px;
+                border-radius: 6px;
+                background: next_touch.has-hover ? #2a2a2a : transparent;
+
+                Text {
+                    text: "▶";
+                    color: next_touch.has-hover ? white : #a1a1aa;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                next_touch := TouchArea {
+                    clicked => { root.cal-next(); }
+                }
+            }
+        }
+
+        // Tombol kembali ke hari ini
+        Rectangle {
+            height: 22px;
+            border-radius: 6px;
+            background: today_touch.has-hover ? #2a2a2a : #1c1c1e;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                alignment: center;
+                Text {
+                    text: "Today";
+                    color: today_touch.has-hover ? white : #60a5fa;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            today_touch := TouchArea {
+                clicked => { root.cal-today(); }
+            }
+        }
+    }
+
+    // Header hari: S M T W T F S
+    HorizontalLayout {
+        height: 18px;
+
+        for day-label in ["S", "M", "T", "W", "T", "F", "S"]: Rectangle {
+            horizontal-stretch: 1;
+            Text {
+                text: day-label;
+                color: day-label == "S" ? #ef4444 : #71717a;
+                font-size: 10px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    // Grid 6 baris x 7 kolom
+    for row in 6: HorizontalLayout {
+        height: 28px;
+
+        for col in 7: Rectangle {
+            horizontal-stretch: 1;
+            property <int> idx: row * 7 + col;
+            property <bool> valid: root.cal-cells.length > idx;
+            property <bool> cur: valid ? root.cal-cells[idx].is-current-month : false;
+            property <bool> today: valid ? root.cal-cells[idx].is-today : false;
+
+            Rectangle {
+                width: 24px;
+                height: 24px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 12px;
+                background: today ? #3b82f6 : transparent;
+
+                Text {
+                    text: valid ? root.cal-cells[idx].text : "";
+                    color: today ? white : (cur ? #e4e4e7 : #52525b);
+                    font-size: 12px;
+                    font-weight: today ? 700 : (cur ? 500 : 400);
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

@@ -1,153 +1,12 @@
-// Ikon digambar dari Rectangle (tanpa Path: Path di software renderer butuh feature
-// tambahan dan menambah dependensi). Segitiga didekati dengan strip vertikal 1 px
-// yang tingginya menurun.
-component PlayIcon inherits Rectangle {
-    in property <brush> icon-color: white;
-    width: 12px;
-    height: 14px;
+import { PlayIcon } from "components/icons.slint";
+import { TabItem } from "components/buttons.slint";
+import { NotifRow, CalendarCell } from "models.slint";
+import { HomeView } from "views/home_view.slint";
+import { NotifView } from "views/notif_view.slint";
+import { CalendarView } from "views/calendar_view.slint";
 
-    for i in 12: Rectangle {
-        x: i * 1px;
-        width: 1px;
-        height: 14px * (12 - i) / 12;
-        y: (14px - self.height) / 2;
-        background: root.icon-color;
-    }
-}
-
-// Ikon pause: dua batang vertikal.
-component PauseIcon inherits Rectangle {
-    in property <brush> icon-color: white;
-    width: 12px;
-    height: 14px;
-
-    Rectangle {
-        x: 1px;
-        width: 4px;
-        height: parent.height;
-        background: root.icon-color;
-    }
-
-    Rectangle {
-        x: 7px;
-        width: 4px;
-        height: parent.height;
-        background: root.icon-color;
-    }
-}
-
-// Ikon next: segitiga menghadap kanan dan satu batang di kanannya.
-component NextIcon inherits Rectangle {
-    in property <brush> icon-color: white;
-    width: 12px;
-    height: 14px;
-
-    for i in 9: Rectangle {
-        x: i * 1px;
-        width: 1px;
-        height: 14px * (9 - i) / 9;
-        y: (14px - self.height) / 2;
-        background: root.icon-color;
-    }
-
-    Rectangle {
-        x: 10px;
-        width: 2px;
-        height: parent.height;
-        background: root.icon-color;
-    }
-}
-
-// Ikon previous: satu batang di kiri dan segitiga menghadap kiri.
-component PrevIcon inherits Rectangle {
-    in property <brush> icon-color: white;
-    width: 12px;
-    height: 14px;
-
-    Rectangle {
-        x: 0px;
-        width: 2px;
-        height: parent.height;
-        background: root.icon-color;
-    }
-
-    for i in 9: Rectangle {
-        x: 3px + i * 1px;
-        width: 1px;
-        height: 14px * (i + 1) / 9;
-        y: (14px - self.height) / 2;
-        background: root.icon-color;
-    }
-}
-
-// Tombol bulat dengan latar saat di-hover. `@children` (ikon) digambar di bawah
-// TouchArea supaya klik selalu sampai ke TouchArea.
-component ControlButton inherits Rectangle {
-    callback clicked();
-
-    width: 30px;
-    height: 30px;
-    border-radius: 15px;
-    background: touch.has-hover ? #2a2a2a : transparent;
-
-    @children
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// Item tab navigasi pill dengan highlight saat aktif atau di-hover.
-component TabItem inherits Rectangle {
-    in property <string> text;
-    in property <bool> active: false;
-    callback clicked();
-
-    height: 22px;
-    border-radius: 11px;
-    background: root.active ? #2c2c2c : (touch.has-hover ? #1a1a1a : transparent);
-
-    HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        alignment: center;
-
-        Text {
-            text: root.text;
-            color: root.active ? white : (touch.has-hover ? #d0d0d0 : #757575);
-            font-size: 11px;
-            font-weight: root.active ? 600 : 400;
-            vertical-alignment: center;
-        }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
-// Satu baris notifikasi untuk ditampilkan di pill. Semua field sudah berupa teks siap
-// tampil (disusun di Rust), jadi Slint tidak perlu memformat apa pun.
-export struct NotifRow {
-    // nama aplikasi, ditambah jumlah bila beberapa notifikasi digabung (mis. "WhatsApp ×3")
-    header: string,
-    // kosong bila judul sama dengan nama aplikasi
-    title: string,
-    // kosong bila sakelar privasi "tampilkan isi" mati (bawaan)
-    body: string,
-    // umur notifikasi, mis. "2 min ago"
-    age: string,
-}
-
-// Satu sel pada grid kalender (42 sel = 6 baris x 7 kolom).
-export struct CalendarCell {
-    // teks tanggal untuk ditampilkan (mis. "22")
-    text: string,
-    // true jika sel berada dalam bulan yang sedang dilihat
-    is-current-month: bool,
-    // true jika sel adalah hari ini
-    is-today: bool,
-}
+// Re-export struct agar dapat diakses oleh kode Rust melalui slint::include_modules!().
+export { NotifRow, CalendarCell }
 
 export component MainWindow inherits Window {
     default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
@@ -167,13 +26,14 @@ export component MainWindow inherits Window {
     // teks tanggal lokal untuk home (mis. "Thu, 22 Oct")
     in-out property <string> date-text: "Thu, 22 Oct";
 
-    // statistik sistem (Langkah 13)
+    // --- statistik sistem (Langkah 13) ---
     in-out property <int> cpu-pct: 0;
     in-out property <int> ram-pct: 0;
     in-out property <bool> has-battery: false;
     in-out property <int> battery-pct: 0;
     in-out property <bool> battery-charging: false;
 
+    // --- media playback ---
     in-out property <string> track-title: "";
     in-out property <string> track-artist: "";
     // true bila ada sesi media aktif; false menyembunyikan tombol kontrol
@@ -181,7 +41,7 @@ export component MainWindow inherits Window {
     // true bila sedang diputar (tombol menampilkan pause), false bila dijeda (menampilkan play)
     in-out property <bool> playing: false;
 
-    // --- notifikasi (diisi dari Rust setiap pill dibuka)
+    // --- notifikasi ---
     // jumlah notifikasi mentah di Action Center (sebelum pengelompokan); 0 menyembunyikan lencana
     in-out property <int> notif-total: 0;
     // kelompok notifikasi terbaru (paling banyak 5)
@@ -191,18 +51,15 @@ export component MainWindow inherits Window {
     // true: pill menampilkan notifikasi; false: menampilkan media
     in-out property <bool> show-notifs: false;
 
-    // --- model tab dan ukuran dinamis (Langkah 12)
-    // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
-    in-out property <int> active-tab: 0;
-
-    // --- kalender (Langkah 14, diisi dari Rust)
+    // --- kalender (Langkah 14) ---
     // judul bulan, mis. "October 2026"
     in-out property <string> cal-title: "October 2026";
     // 42 sel grid kalender
     in-out property <[CalendarCell]> cal-cells: [];
-    callback cal-prev();
-    callback cal-next();
-    callback cal-today();
+
+    // --- model tab dan ukuran dinamis (Langkah 12) ---
+    // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
+    in-out property <int> active-tab: 0;
 
     // Dimensi target pill saat peek atau expanded sesuai tab aktif dan konten
     property <length> target-pill-w:
@@ -215,7 +72,9 @@ export component MainWindow inherits Window {
 
     property <length> target-pill-h:
         root.expanded ? (
-            root.active-tab == 0 ? (root.show-notifs ? 135px : (root.has-media ? 165px : 120px)) :
+            root.active-tab == 0 ? (
+                root.show-notifs ? 135px : (root.has-media ? 165px : 120px)
+            ) :
             root.active-tab == 1 ? 260px :
             root.active-tab == 2 ? 140px :
             140px
@@ -233,11 +92,14 @@ export component MainWindow inherits Window {
     callback skip-previous();
     callback request-window-resize();
 
+    callback cal-prev();
+    callback cal-next();
+    callback cal-today();
+
     property <bool> hovered: area.has-hover;
     changed hovered => { root.hover-changed(root.hovered); }
 
-    // Setiap kali pill dibuka, mulai dari tampilan notifikasi bila tidak ada media tetapi
-    // ada notifikasi; bila ada media atau tidak ada notifikasi, mulai dari tampilan media.
+    // Reset status notifikasi detail saat overlay ditutup
     changed expanded => {
         if (!root.expanded) {
             root.show-notifs = false;
@@ -245,7 +107,6 @@ export component MainWindow inherits Window {
         }
     }
 
-    // Minta Rust menyesuaikan ukuran jendela saat tab berganti
     // Minta Rust menyesuaikan ukuran jika status tampilan notifikasi detail berubah
     changed show-notifs => {
         if (root.active-tab == 0 && root.expanded) {
@@ -253,6 +114,7 @@ export component MainWindow inherits Window {
         }
     }
 
+    // Minta Rust menyesuaikan ukuran jendela saat tab berganti
     changed active-tab => {
         root.request-window-resize();
     }
@@ -361,510 +223,43 @@ export component MainWindow inherits Window {
                 y: 32px;
                 height: parent.height - 32px;
 
-                // --- Tampilan Utama Home (Jam, Tanggal, Stats, Notifikasi 1 baris, Media jika ada) ---
-                if !root.show-notifs: VerticalLayout {
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    padding-top: 4px;
-                    padding-bottom: 6px;
-                    spacing: 6px;
+                if !root.show-notifs: HomeView {
+                    clock-text: root.clock-text;
+                    date-text: root.date-text;
+                    cpu-pct: root.cpu-pct;
+                    ram-pct: root.ram-pct;
+                    has-battery: root.has-battery;
+                    battery-pct: root.battery-pct;
+                    battery-charging: root.battery-charging;
+                    notif-total: root.notif-total;
+                    notifs: root.notifs;
+                    has-media: root.has-media;
+                    track-title: root.track-title;
+                    track-artist: root.track-artist;
+                    playing: root.playing;
 
-                    // Baris 1: Jam & Tanggal di kiri, Chip Statistik di kanan
-                    HorizontalLayout {
-                        alignment: space-between;
-
-                        VerticalLayout {
-                            alignment: center;
-                            spacing: 0px;
-
-                            Text {
-                                text: root.clock-text;
-                                color: white;
-                                font-size: 20px;
-                                font-weight: 700;
-                            }
-
-                            Text {
-                                text: root.date-text;
-                                color: #8e8e93;
-                                font-size: 11px;
-                                font-weight: 500;
-                            }
-                        }
-
-                        HorizontalLayout {
-                            alignment: end;
-                            spacing: 5px;
-                            y: (parent.height - self.height) / 2;
-
-                            // Chip CPU
-                            Rectangle {
-                                height: 22px;
-                                border-radius: 6px;
-                                background: #1c1c1e;
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 6px;
-                                    alignment: center;
-                                    Text {
-                                        text: "CPU \{root.cpu-pct}%";
-                                        color: root.cpu-pct > 80 ? #f87171 : #4ade80;
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-
-                            // Chip RAM
-                            Rectangle {
-                                height: 22px;
-                                border-radius: 6px;
-                                background: #1c1c1e;
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 6px;
-                                    alignment: center;
-                                    Text {
-                                        text: "RAM \{root.ram-pct}%";
-                                        color: root.ram-pct > 85 ? #f87171 : #38bdf8;
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-
-                            // Chip Baterai (hanya jika ada baterai)
-                            if root.has-battery: Rectangle {
-                                height: 22px;
-                                border-radius: 6px;
-                                background: #1c1c1e;
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 6px;
-                                    alignment: center;
-                                    Text {
-                                        text: root.battery-charging ? "⚡ \{root.battery-pct}%" : "BAT \{root.battery-pct}%";
-                                        color: root.battery-charging ? #facc15 : (root.battery-pct <= 20 ? #f87171 : #e2e8f0);
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Baris 2: Satu baris notifikasi terbaru (aplikasi + judul, elide)
-                    Rectangle {
-                        height: 24px;
-                        border-radius: 7px;
-                        background: notif_touch.has-hover ? #252528 : #18181a;
-                        clip: true;
-
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            alignment: space-between;
-                            spacing: 6px;
-
-                            HorizontalLayout {
-                                horizontal-stretch: 1;
-                                spacing: 6px;
-                                alignment: start;
-
-                                Rectangle {
-                                    width: 6px;
-                                    height: 6px;
-                                    border-radius: 3px;
-                                    background: root.notif-total > 0 ? #ef4444 : #52525b;
-                                    y: (parent.height - self.height) / 2;
-                                }
-
-                                Text {
-                                    text: root.notif-total > 0 ? (
-                                        root.notifs.length > 0 ? (
-                                            root.notifs[0].title != "" ?
-                                                "\{root.notifs[0].header}: \{root.notifs[0].title}" :
-                                                root.notifs[0].header
-                                        ) : "\{root.notif-total} notifications"
-                                    ) : "No new notifications";
-                                    color: root.notif-total > 0 ? #e4e4e7 : #71717a;
-                                    font-size: 11px;
-                                    font-weight: root.notif-total > 0 ? 500 : 400;
-                                    overflow: elide;
-                                    vertical-alignment: center;
-                                }
-                            }
-
-                            if root.notif-total > 0: Rectangle {
-                                width: 18px;
-                                height: 16px;
-                                border-radius: 8px;
-                                background: #ef4444;
-                                y: (parent.height - self.height) / 2;
-
-                                Text {
-                                    text: root.notif-total > 99 ? "99+" : "\{root.notif-total}";
-                                    color: white;
-                                    font-size: 9px;
-                                    font-weight: 700;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-
-                        notif_touch := TouchArea {
-                            clicked => {
-                                if (root.notif-total > 0) {
-                                    root.show-notifs = true;
-                                }
-                            }
-                        }
-                    }
-
-                    // Baris 3: Media baris (jika ada sesi media aktif)
-                    if root.has-media: Rectangle {
-                        height: 34px;
-                        border-radius: 8px;
-                        background: #141416;
-
-                        HorizontalLayout {
-                            padding-left: 10px;
-                            padding-right: 6px;
-                            alignment: space-between;
-                            spacing: 8px;
-
-                            VerticalLayout {
-                                horizontal-stretch: 1;
-                                alignment: center;
-                                spacing: 1px;
-
-                                Text {
-                                    text: root.track-title;
-                                    color: white;
-                                    font-size: 12px;
-                                    font-weight: 600;
-                                    overflow: elide;
-                                }
-
-                                if root.track-artist != "": Text {
-                                    text: root.track-artist;
-                                    color: #a1a1aa;
-                                    font-size: 10px;
-                                    overflow: elide;
-                                }
-                            }
-
-                            HorizontalLayout {
-                                alignment: end;
-                                spacing: 4px;
-                                y: (parent.height - self.height) / 2;
-
-                                ControlButton {
-                                    width: 26px;
-                                    height: 26px;
-                                    border-radius: 13px;
-                                    clicked => { root.skip-previous(); }
-
-                                    PrevIcon {
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-                                }
-
-                                ControlButton {
-                                    width: 26px;
-                                    height: 26px;
-                                    border-radius: 13px;
-                                    clicked => { root.play-pause(); }
-
-                                    PauseIcon {
-                                        visible: root.playing;
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-
-                                    PlayIcon {
-                                        visible: !root.playing;
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-                                }
-
-                                ControlButton {
-                                    width: 26px;
-                                    height: 26px;
-                                    border-radius: 13px;
-                                    clicked => { root.skip-next(); }
-
-                                    NextIcon {
-                                        x: (parent.width - self.width) / 2;
-                                        y: (parent.height - self.height) / 2;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    notif-clicked => { root.show-notifs = true; }
+                    play-pause => { root.play-pause(); }
+                    skip-next => { root.skip-next(); }
+                    skip-previous => { root.skip-previous(); }
                 }
 
-                // --- Tampilan Detail Notifikasi (saat baris notifikasi atau lencana diklik) ---
-                if root.show-notifs: Rectangle {
-                    VerticalLayout {
-                        padding-left: 14px;
-                        padding-right: 14px;
-                        padding-top: 4px;
-                        padding-bottom: 8px;
-                        spacing: 4px;
-
-                        // Navigasi kembali ke Home & status halaman
-                        HorizontalLayout {
-                            alignment: space-between;
-                            height: 18px;
-
-                            Rectangle {
-                                border-radius: 9px;
-                                background: back_touch.has-hover ? #2a2a2a : transparent;
-                                HorizontalLayout {
-                                    padding-left: 6px;
-                                    padding-right: 6px;
-                                    alignment: center;
-                                    Text {
-                                        text: "← Back to Home";
-                                        color: back_touch.has-hover ? white : #a1a1aa;
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        vertical-alignment: center;
-                                    }
-                                }
-                                back_touch := TouchArea {
-                                    clicked => { root.show-notifs = false; }
-                                }
-                            }
-
-                            if root.notifs.length > 0: Text {
-                                text: root.notifs.length > 1 ? "\{root.notif-index + 1} of \{root.notifs.length}" : "";
-                                color: #71717a;
-                                font-size: 11px;
-                                vertical-alignment: center;
-                            }
-                        }
-
-                        // Kartu notifikasi detail
-                        Rectangle {
-                            background: #141416;
-                            border-radius: 8px;
-                            clip: true;
-
-                            VerticalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
-                                padding-top: 6px;
-                                padding-bottom: 6px;
-                                spacing: 2px;
-                                alignment: center;
-
-                                if root.notifs.length == 0: Text {
-                                    text: "No notifications";
-                                    color: #71717a;
-                                    font-size: 12px;
-                                }
-
-                                if root.notifs.length > 0: HorizontalLayout {
-                                    alignment: space-between;
-                                    spacing: 8px;
-
-                                    Text {
-                                        text: root.notifs[root.notif-index].header;
-                                        color: #a1a1aa;
-                                        font-size: 11px;
-                                        font-weight: 600;
-                                        overflow: elide;
-                                        horizontal-stretch: 1;
-                                    }
-
-                                    Text {
-                                        text: root.notifs[root.notif-index].age;
-                                        color: #71717a;
-                                        font-size: 10px;
-                                    }
-                                }
-
-                                if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
-                                    text: root.notifs[root.notif-index].title;
-                                    color: white;
-                                    font-size: 13px;
-                                    font-weight: 700;
-                                    overflow: elide;
-                                }
-
-                                if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
-                                    text: root.notifs[root.notif-index].body;
-                                    color: #b0b0b0;
-                                    font-size: 11px;
-                                    overflow: elide;
-                                }
-                            }
-
-                            TouchArea {
-                                clicked => {
-                                    if (root.notifs.length > 0) {
-                                        if (root.notif-index + 1 >= root.notifs.length) {
-                                            root.notif-index = 0;
-                                        } else {
-                                            root.notif-index += 1;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                if root.show-notifs: NotifView {
+                    notifs: root.notifs;
+                    notif-index <=> root.notif-index;
+                    back-clicked => { root.show-notifs = false; }
                 }
             }
 
             // --- konten tab Calendar (active-tab == 1) ---
-            if root.expanded && root.active-tab == 1: VerticalLayout {
+            if root.expanded && root.active-tab == 1: CalendarView {
                 y: 32px;
                 height: parent.height - 32px;
-                padding-left: 12px;
-                padding-right: 12px;
-                padding-top: 6px;
-                padding-bottom: 6px;
-                spacing: 4px;
-
-                // Baris navigasi bulan: [<] October 2026 [>] dan tombol Today
-                HorizontalLayout {
-                    alignment: space-between;
-                    height: 22px;
-
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: start;
-
-                        // Tombol bulan sebelumnya
-                        Rectangle {
-                            width: 22px;
-                            height: 22px;
-                            border-radius: 6px;
-                            background: prev_touch.has-hover ? #2a2a2a : transparent;
-
-                            Text {
-                                text: "◀";
-                                color: prev_touch.has-hover ? white : #a1a1aa;
-                                font-size: 11px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-
-                            prev_touch := TouchArea {
-                                clicked => { root.cal-prev(); }
-                            }
-                        }
-
-                        // Judul bulan
-                        Text {
-                            text: root.cal-title;
-                            color: white;
-                            font-size: 13px;
-                            font-weight: 700;
-                            vertical-alignment: center;
-                        }
-
-                        // Tombol bulan berikutnya
-                        Rectangle {
-                            width: 22px;
-                            height: 22px;
-                            border-radius: 6px;
-                            background: next_touch.has-hover ? #2a2a2a : transparent;
-
-                            Text {
-                                text: "▶";
-                                color: next_touch.has-hover ? white : #a1a1aa;
-                                font-size: 11px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-
-                            next_touch := TouchArea {
-                                clicked => { root.cal-next(); }
-                            }
-                        }
-                    }
-
-                    // Tombol kembali ke hari ini
-                    Rectangle {
-                        height: 22px;
-                        border-radius: 6px;
-                        background: today_touch.has-hover ? #2a2a2a : #1c1c1e;
-
-                        HorizontalLayout {
-                            padding-left: 8px;
-                            padding-right: 8px;
-                            alignment: center;
-                            Text {
-                                text: "Today";
-                                color: today_touch.has-hover ? white : #60a5fa;
-                                font-size: 11px;
-                                font-weight: 600;
-                                vertical-alignment: center;
-                            }
-                        }
-
-                        today_touch := TouchArea {
-                            clicked => { root.cal-today(); }
-                        }
-                    }
-                }
-
-                // Header hari: S M T W T F S
-                HorizontalLayout {
-                    height: 18px;
-
-                    for day-label in ["S", "M", "T", "W", "T", "F", "S"]: Rectangle {
-                        horizontal-stretch: 1;
-                        Text {
-                            text: day-label;
-                            color: day-label == "S" ? #ef4444 : #71717a;
-                            font-size: 10px;
-                            font-weight: 600;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-
-                // Grid 6 baris x 7 kolom
-                for row in 6: HorizontalLayout {
-                    height: 28px;
-
-                    for col in 7: Rectangle {
-                        horizontal-stretch: 1;
-                        property <int> idx: row * 7 + col;
-                        property <bool> valid: root.cal-cells.length > idx;
-                        property <bool> cur: valid ? root.cal-cells[idx].is-current-month : false;
-                        property <bool> today: valid ? root.cal-cells[idx].is-today : false;
-
-                        Rectangle {
-                            width: 24px;
-                            height: 24px;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            border-radius: 12px;
-                            background: today ? #3b82f6 : transparent;
-
-                            Text {
-                                text: valid ? root.cal-cells[idx].text : "";
-                                color: today ? white : (cur ? #e4e4e7 : #52525b);
-                                font-size: 12px;
-                                font-weight: today ? 700 : (cur ? 500 : 400);
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-                }
+                cal-title: root.cal-title;
+                cal-cells: root.cal-cells;
+                cal-prev => { root.cal-prev(); }
+                cal-next => { root.cal-next(); }
+                cal-today => { root.cal-today(); }
             }
 
             // --- konten tab Timer (active-tab == 2) ---

@@ -1,0 +1,118 @@
+import { NotifRow } from "../models.slint";
+
+export component NotifView inherits VerticalLayout {
+    in property <[NotifRow]> notifs;
+    in-out property <int> notif-index;
+
+    callback back-clicked();
+    callback card-clicked();
+
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 4px;
+    padding-bottom: 8px;
+    spacing: 4px;
+
+    // Navigasi kembali ke Home & status halaman
+    HorizontalLayout {
+        alignment: space-between;
+        height: 18px;
+
+        Rectangle {
+            border-radius: 9px;
+            background: back_touch.has-hover ? #2a2a2a : transparent;
+            HorizontalLayout {
+                padding-left: 6px;
+                padding-right: 6px;
+                alignment: center;
+                Text {
+                    text: "← Back to Home";
+                    color: back_touch.has-hover ? white : #a1a1aa;
+                    font-size: 11px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+            back_touch := TouchArea {
+                clicked => { root.back-clicked(); }
+            }
+        }
+
+        if root.notifs.length > 0: Text {
+            text: root.notifs.length > 1 ? "\{root.notif-index + 1} of \{root.notifs.length}" : "";
+            color: #71717a;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+
+    // Kartu notifikasi detail
+    Rectangle {
+        background: #141416;
+        border-radius: 8px;
+        clip: true;
+
+        VerticalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            spacing: 2px;
+            alignment: center;
+
+            if root.notifs.length == 0: Text {
+                text: "No notifications";
+                color: #71717a;
+                font-size: 12px;
+            }
+
+            if root.notifs.length > 0: HorizontalLayout {
+                alignment: space-between;
+                spacing: 8px;
+
+                Text {
+                    text: root.notifs[root.notif-index].header;
+                    color: #a1a1aa;
+                    font-size: 11px;
+                    font-weight: 600;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: root.notifs[root.notif-index].age;
+                    color: #71717a;
+                    font-size: 10px;
+                }
+            }
+
+            if root.notifs.length > 0 && root.notifs[root.notif-index].title != "": Text {
+                text: root.notifs[root.notif-index].title;
+                color: white;
+                font-size: 13px;
+                font-weight: 700;
+                overflow: elide;
+            }
+
+            if root.notifs.length > 0 && root.notifs[root.notif-index].body != "": Text {
+                text: root.notifs[root.notif-index].body;
+                color: #b0b0b0;
+                font-size: 11px;
+                overflow: elide;
+            }
+        }
+
+        TouchArea {
+            clicked => {
+                if (root.notifs.length > 0) {
+                    if (root.notif-index + 1 >= root.notifs.length) {
+                        root.notif-index = 0;
+                    } else {
+                        root.notif-index += 1;
+                    }
+                    root.card-clicked();
+                }
+            }
+        }
+    }
+}

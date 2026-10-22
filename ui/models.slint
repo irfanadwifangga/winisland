@@ -1,0 +1,24 @@
+// Definisi struktur data model untuk antarmuka Slint.
+
+// Satu baris notifikasi untuk ditampilkan di pill. Semua field sudah berupa teks siap
+// tampil (disusun di Rust), jadi Slint tidak perlu memformat apa pun.
+export struct NotifRow {
+    // nama aplikasi, ditambah jumlah bila beberapa notifikasi digabung (mis. "WhatsApp ×3")
+    header: string,
+    // kosong bila judul sama dengan nama aplikasi
+    title: string,
+    // kosong bila sakelar privasi "tampilkan isi" mati (bawaan)
+    body: string,
+    // umur notifikasi, mis. "2 min ago"
+    age: string,
+}
+
+// Satu sel pada grid kalender (42 sel = 6 baris x 7 kolom).
+export struct CalendarCell {
+    // teks tanggal untuk ditampilkan (mis. "22")
+    text: string,
+    // true jika sel berada dalam bulan yang sedang dilihat
+    is-current-month: bool,
+    // true jika sel adalah hari ini
+    is-today: bool,
+}

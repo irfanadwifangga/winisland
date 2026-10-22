@@ -1,0 +1,45 @@
+// Tombol bulat dengan latar saat di-hover. `@children` (ikon) digambar di bawah
+// TouchArea supaya klik selalu sampai ke TouchArea.
+export component ControlButton inherits Rectangle {
+    callback clicked();
+
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background: touch.has-hover ? #2a2a2a : transparent;
+
+    @children
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Item tab navigasi pill dengan highlight saat aktif atau di-hover.
+export component TabItem inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 22px;
+    border-radius: 11px;
+    background: root.active ? #2c2c2c : (touch.has-hover ? #1a1a1a : transparent);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.active ? white : (touch.has-hover ? #d0d0d0 : #757575);
+            font-size: 11px;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
