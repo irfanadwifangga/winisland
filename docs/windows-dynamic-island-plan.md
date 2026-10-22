@@ -793,6 +793,7 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 24. `12da5b5` feat: add multi-monitor and DPI-aware placement with tray selector (Opsi A)
 25. `628f719` feat: auto-hide overlay when foreground app is fullscreen with tray toggle
 26. `534af4d` feat: implement dynamic window sizing and tab navigation framework (langkah 12)
+27. `8d25852` feat: implement 3-state model with hover peek clock and click-to-expand
 
 ### Multi-Monitor & DPI Aware Placement (22 Okt 2026)
 
