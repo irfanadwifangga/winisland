@@ -790,6 +790,7 @@ Isi dari output `git log --oneline` (pesan commit sebenarnya, bukan rencana):
 22. `ab3a2f2` docs: record step 10e RAM bisect results and update commit history
 23. `8ab082e` feat: auto-switch to notifications on expand when no media is playing
 24. `12da5b5` feat: add multi-monitor and DPI-aware placement with tray selector (Opsi A)
+25. `628f719` feat: auto-hide overlay when foreground app is fullscreen with tray toggle
 
 ### Multi-Monitor & DPI Aware Placement (22 Okt 2026)
 
