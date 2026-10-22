@@ -37,6 +37,7 @@ mod fullscreen;
 mod media;
 mod monitor;
 mod stats;
+mod timer;
 
 mod notif;
 // `Snapshot::groups` hanya dibaca oleh `notif::debug_run` (build debug).
@@ -312,6 +313,22 @@ fn apply_calendar(ui: &MainWindow, state: &calendar::CalendarState) {
     ui.set_cal_cells(ModelRc::new(VecModel::from(cells)));
 }
 
+/// Memperbarui properti timer countdown di UI.
+fn apply_timer(ui: &MainWindow, timer: &timer::CountdownTimer) {
+    ui.set_timer_display(timer.format_time().into());
+    ui.set_timer_running(timer.is_running());
+    ui.set_timer_paused(timer.is_paused());
+    ui.set_timer_finished(timer.is_finished());
+    ui.set_timer_progress(timer.progress());
+}
+
+/// Memperbarui properti stopwatch di UI.
+fn apply_stopwatch(ui: &MainWindow, sw: &timer::Stopwatch) {
+    ui.set_stopwatch_display(sw.format_time().into());
+    ui.set_stopwatch_running(sw.is_running());
+    ui.set_stopwatch_paused(sw.is_paused());
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // baca preferensi dari registry dulu: sakelar privasi bawaannya tersembunyi
     config::load();
@@ -358,6 +375,15 @@ fn main() -> Result<(), slint::PlatformError> {
     // Saat hover: masuk ke mode Peek (tampilkan jam, jendela tipis 34 px).
     // Saat diklik: masuk ke mode Expanded (dynamic island penuh).
     // Saat mouse keluar: collapse kembali ke garis idle 4 px setelah `SHRINK_DELAY_MS`.
+    // --- timer & stopwatch state (Langkah 15) ---
+    let countdown_timer = Rc::new(RefCell::new(timer::CountdownTimer::default()));
+    let stopwatch = Rc::new(RefCell::new(timer::Stopwatch::new()));
+    let alarm_timer = Rc::new(Timer::default());
+    let sw_tick_timer = Rc::new(Timer::default());
+
+    apply_timer(&ui, &countdown_timer.borrow());
+    apply_stopwatch(&ui, &stopwatch.borrow());
+
     let shrink_timer = Rc::new(Timer::default());
     let clock_timer = Rc::new(Timer::default());
     let cpu_tracker = Rc::new(RefCell::new(stats::CpuTracker::new()));
@@ -367,6 +393,8 @@ fn main() -> Result<(), slint::PlatformError> {
         let clock_t = clock_timer.clone();
         let cpu_tracker_tick = cpu_tracker.clone();
         let cpu_tracker_exit = cpu_tracker.clone();
+        let ct_hover = countdown_timer.clone();
+        let sw_tick_hover = sw_tick_timer.clone();
         ui.on_hover_changed(move |hovered| {
             let Some(ui) = weak.upgrade() else { return };
             if hovered {
@@ -380,9 +408,15 @@ fn main() -> Result<(), slint::PlatformError> {
                     // Mulai timer jam 1 detik selama terlihat
                     let clock_weak = weak.clone();
                     let cpu_tracker_tick = cpu_tracker_tick.clone();
+                    let ct_tick = ct_hover.clone();
                     clock_t.start(TimerMode::Repeated, Duration::from_secs(1), move || {
                         if let Some(ui) = clock_weak.upgrade() {
                             ui.set_clock_text(local_time_string().into());
+                            // Pembaruan countdown timer saat sedang berjalan di peek atau expanded
+                            if ct_tick.borrow().is_running() {
+                                ct_tick.borrow_mut().check_finished();
+                                apply_timer(&ui, &ct_tick.borrow());
+                            }
                             // Statistik sistem hanya diperbarui saat expanded (0% CPU idle saat peek/idle)
                             if ui.get_expanded() {
                                 let mut tracker = cpu_tracker_tick.borrow_mut();
@@ -396,6 +430,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 ui.set_expanded(false);
                 ui.set_peek(false);
                 clock_t.stop(); // matikan timer jam saat idle (0% CPU idle)
+                sw_tick_hover.stop(); // matikan tick stopwatch saat idle (0% CPU idle)
                 cpu_tracker_exit.borrow_mut().reset(); // reset delta CPU tracker
 
                 let weak2 = weak.clone();
@@ -478,6 +513,141 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = weak.upgrade() else { return };
             cal.borrow_mut().reset_to_today();
             apply_calendar(&ui, &cal.borrow());
+        });
+    }
+
+    // --- timer & stopwatch callbacks (Langkah 15) ---
+
+    // Timer Start
+    {
+        let weak = ui.as_weak();
+        let ct = countdown_timer.clone();
+        let at = alarm_timer.clone();
+        ui.on_timer_start(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            ct.borrow_mut().start();
+            apply_timer(&ui, &ct.borrow());
+
+            // Pasang single-shot alarm saat target waktu tercapai (0% CPU idle, tanpa polling)
+            let rem = ct.borrow().remaining();
+            let wake_weak = weak.clone();
+            let wake_ct = ct.clone();
+            at.start(TimerMode::SingleShot, rem, move || {
+                if let Some(ui) = wake_weak.upgrade() {
+                    wake_ct.borrow_mut().check_finished();
+                    apply_timer(&ui, &wake_ct.borrow());
+                    // Bangunkan overlay dan tampilkan alarm di tab Timer
+                    ui.set_expanded(true);
+                    ui.set_active_tab(2);
+                    let (w, h) = current_window_size(&ui);
+                    place(&ui, w, h);
+                }
+            });
+        });
+    }
+
+    // Timer Pause
+    {
+        let weak = ui.as_weak();
+        let ct = countdown_timer.clone();
+        let at = alarm_timer.clone();
+        ui.on_timer_pause(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            ct.borrow_mut().pause();
+            at.stop(); // hentikan alarm single-shot saat dijeda
+            apply_timer(&ui, &ct.borrow());
+        });
+    }
+
+    // Timer Reset
+    {
+        let weak = ui.as_weak();
+        let ct = countdown_timer.clone();
+        let at = alarm_timer.clone();
+        ui.on_timer_reset(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            ct.borrow_mut().reset();
+            at.stop();
+            apply_timer(&ui, &ct.borrow());
+        });
+    }
+
+    // Timer Set Duration (Preset menit)
+    {
+        let weak = ui.as_weak();
+        let ct = countdown_timer.clone();
+        let at = alarm_timer.clone();
+        ui.on_timer_set_min(move |mins| {
+            let Some(ui) = weak.upgrade() else { return };
+            at.stop();
+            ct.borrow_mut()
+                .set_duration(Duration::from_secs((mins.max(1) as u64) * 60));
+            apply_timer(&ui, &ct.borrow());
+        });
+    }
+
+    // Timer Adjust Duration (+/- menit)
+    {
+        let weak = ui.as_weak();
+        let ct = countdown_timer.clone();
+        let at = alarm_timer.clone();
+        ui.on_timer_adjust_min(move |delta| {
+            let Some(ui) = weak.upgrade() else { return };
+            at.stop();
+            ct.borrow_mut().adjust_minutes(delta);
+            apply_timer(&ui, &ct.borrow());
+        });
+    }
+
+    // Stopwatch Start
+    {
+        let weak = ui.as_weak();
+        let sw = stopwatch.clone();
+        let sw_tick = sw_tick_timer.clone();
+        ui.on_stopwatch_start(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            sw.borrow_mut().start();
+            apply_stopwatch(&ui, &sw.borrow());
+
+            // Timer pembaruan cepat (50ms) hanya berjalan saat stopwatch aktif
+            let tick_weak = weak.clone();
+            let tick_sw = sw.clone();
+            sw_tick.start(TimerMode::Repeated, Duration::from_millis(50), move || {
+                if let Some(ui) = tick_weak.upgrade() {
+                    if tick_sw.borrow().is_running()
+                        && ui.get_expanded()
+                        && ui.get_active_tab() == 2
+                    {
+                        apply_stopwatch(&ui, &tick_sw.borrow());
+                    }
+                }
+            });
+        });
+    }
+
+    // Stopwatch Pause
+    {
+        let weak = ui.as_weak();
+        let sw = stopwatch.clone();
+        let sw_tick = sw_tick_timer.clone();
+        ui.on_stopwatch_pause(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            sw.borrow_mut().pause();
+            sw_tick.stop();
+            apply_stopwatch(&ui, &sw.borrow());
+        });
+    }
+
+    // Stopwatch Reset
+    {
+        let weak = ui.as_weak();
+        let sw = stopwatch.clone();
+        let sw_tick = sw_tick_timer.clone();
+        ui.on_stopwatch_reset(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            sw.borrow_mut().reset();
+            sw_tick.stop();
+            apply_stopwatch(&ui, &sw.borrow());
         });
     }
 

@@ -1,0 +1,304 @@
+// Komponen tampilan Tab Timer (Countdown) dan Stopwatch.
+
+component ModeButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 20px;
+    border-radius: 10px;
+    background: root.active ? #3f3f46 : (touch.has-hover ? #27272a : transparent);
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: root.active ? white : #a1a1aa;
+            font-size: 11px;
+            font-weight: root.active ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component PresetPill inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    height: 18px;
+    border-radius: 9px;
+    background: touch.has-hover ? #27272a : #18181b;
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: touch.has-hover ? white : #a1a1aa;
+            font-size: 10px;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component ActionButton inherits Rectangle {
+    in property <string> text;
+    in property <color> btn-color: #22c55e;
+    callback clicked();
+
+    height: 28px;
+    border-radius: 14px;
+    background: touch.has-hover ? root.btn-color.brighter(0.15) : root.btn-color;
+
+    HorizontalLayout {
+        padding-left: 16px;
+        padding-right: 16px;
+        alignment: center;
+
+        Text {
+            text: root.text;
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+export component TimerView inherits VerticalLayout {
+    // 0: Timer (Countdown), 1: Stopwatch
+    in-out property <int> mode: 0;
+
+    // --- Properti Timer (Countdown) ---
+    in property <string> timer-display: "05:00";
+    in property <bool> timer-running: false;
+    in property <bool> timer-paused: false;
+    in property <bool> timer-finished: false;
+    in property <float> timer-progress: 1.0;
+
+    // --- Properti Stopwatch ---
+    in property <string> stopwatch-display: "00:00.00";
+    in property <bool> stopwatch-running: false;
+    in property <bool> stopwatch-paused: false;
+
+    // Callbacks Timer
+    callback timer-start();
+    callback timer-pause();
+    callback timer-reset();
+    callback timer-set-min(int);
+    callback timer-adjust-min(int);
+
+    // Callbacks Stopwatch
+    callback stopwatch-start();
+    callback stopwatch-pause();
+    callback stopwatch-reset();
+
+    padding-left: 14px;
+    padding-right: 14px;
+    padding-top: 2px;
+    padding-bottom: 8px;
+    spacing: 6px;
+
+    // Baris 1: Mode Selector (Timer | Stopwatch)
+    HorizontalLayout {
+        alignment: center;
+        spacing: 6px;
+        height: 22px;
+
+        Rectangle {
+            height: 22px;
+            border-radius: 11px;
+            background: #18181b;
+
+            HorizontalLayout {
+                padding: 1px;
+                spacing: 2px;
+
+                ModeButton {
+                    text: "Countdown";
+                    active: root.mode == 0;
+                    clicked => { root.mode = 0; }
+                }
+
+                ModeButton {
+                    text: "Stopwatch";
+                    active: root.mode == 1;
+                    clicked => { root.mode = 1; }
+                }
+            }
+        }
+    }
+
+    // --- Konten Mode Countdown (mode == 0) ---
+    if root.mode == 0: VerticalLayout {
+        spacing: 6px;
+
+        // Baris Preset Cepat & Penyesuaian Menit (hanya jika belum start / tidak running)
+        if !root.timer-running && !root.timer-paused: HorizontalLayout {
+            alignment: center;
+            spacing: 5px;
+            height: 18px;
+
+            PresetPill {
+                text: "-1m";
+                clicked => { root.timer-adjust-min(-1); }
+            }
+
+            PresetPill {
+                text: "1m";
+                clicked => { root.timer-set-min(1); }
+            }
+
+            PresetPill {
+                text: "5m";
+                clicked => { root.timer-set-min(5); }
+            }
+
+            PresetPill {
+                text: "15m";
+                clicked => { root.timer-set-min(15); }
+            }
+
+            PresetPill {
+                text: "25m (Pomodoro)";
+                clicked => { root.timer-set-min(25); }
+            }
+
+            PresetPill {
+                text: "+1m";
+                clicked => { root.timer-adjust-min(1); }
+            }
+        }
+
+        // Tampilan Angka Digital Besar
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+
+            Text {
+                text: root.timer-finished ? "⏰ Time's up!" : root.timer-display;
+                color: root.timer-finished ? #ef4444 : white;
+                font-size: root.timer-finished ? 24px : 32px;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            // Progress bar halus
+            if !root.timer-finished: Rectangle {
+                width: 180px;
+                height: 3px;
+                border-radius: 1.5px;
+                background: #27272a;
+
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width * root.timer-progress;
+                    height: parent.height;
+                    border-radius: 1.5px;
+                    background: root.timer-running ? #3b82f6 : #71717a;
+                }
+            }
+        }
+
+        // Baris Tombol Kontrol (Start / Pause / Reset)
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12px;
+            height: 28px;
+
+            if !root.timer-running && !root.timer-paused && !root.timer-finished: ActionButton {
+                text: "Start";
+                btn-color: #16a34a;
+                clicked => { root.timer-start(); }
+            }
+
+            if root.timer-running: ActionButton {
+                text: "Pause";
+                btn-color: #d97706;
+                clicked => { root.timer-pause(); }
+            }
+
+            if root.timer-paused: ActionButton {
+                text: "Resume";
+                btn-color: #16a34a;
+                clicked => { root.timer-start(); }
+            }
+
+            if root.timer-paused: ActionButton {
+                text: "Reset";
+                btn-color: #3f3f46;
+                clicked => { root.timer-reset(); }
+            }
+
+            if root.timer-finished: ActionButton {
+                text: "Dismiss / Reset";
+                btn-color: #ef4444;
+                clicked => { root.timer-reset(); }
+            }
+        }
+    }
+
+    // --- Konten Mode Stopwatch (mode == 1) ---
+    if root.mode == 1: VerticalLayout {
+        spacing: 10px;
+
+        // Tampilan Angka Stopwatch Besar
+        Text {
+            text: root.stopwatch-display;
+            color: white;
+            font-size: 32px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        // Baris Tombol Kontrol Stopwatch
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12px;
+            height: 28px;
+
+            if !root.stopwatch-running && !root.stopwatch-paused: ActionButton {
+                text: "Start";
+                btn-color: #16a34a;
+                clicked => { root.stopwatch-start(); }
+            }
+
+            if root.stopwatch-running: ActionButton {
+                text: "Pause";
+                btn-color: #d97706;
+                clicked => { root.stopwatch-pause(); }
+            }
+
+            if root.stopwatch-paused: ActionButton {
+                text: "Resume";
+                btn-color: #16a34a;
+                clicked => { root.stopwatch-start(); }
+            }
+
+            if root.stopwatch-paused: ActionButton {
+                text: "Reset";
+                btn-color: #3f3f46;
+                clicked => { root.stopwatch-reset(); }
+            }
+        }
+    }
+}
