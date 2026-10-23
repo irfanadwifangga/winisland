@@ -1023,6 +1023,6 @@ Temuan berasal dari pemeriksaan HEAD `05586e9`. Pembaruan awal hanya dokumentasi
 ### 10.4 Pekerjaan terbuka
 
 1. **Paket 4b:** perapian UI lanjutan menunggu screenshot pemilik (Home, Calendar, Timer, Tasks, Schedule).
-2. **Paket 5:** pembaruan `README.md`, `cargo-deny`/`cargo-license` sebelum rilis biner, pesan di pill saat akses notifikasi dicabut, uji GPU dengan perangkat nyata.
+2. **Paket 5:** `README.md` ✅ dan `cargo-deny` ✅ (`cd91290`, `cargo deny check licenses` = ok); sisa: pesan di pill saat akses notifikasi dicabut ✅ (`9d1f309`), uji GPU dengan perangkat nyata (menunggu pemilik), dan rilis biner pertama.
 3. **Optimisasi RAM/CPU** setelah semua fitur selesai (termasuk deteksi fullscreen tanpa polling 500 ms).
 4. Batasan parser JSON satu-field-per-baris berlaku untuk Tasks dan Jadwal.
