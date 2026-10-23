@@ -54,6 +54,8 @@ export component MainWindow inherits Window {
     in-out property <int> notif-index: 0;
     // true: pill menampilkan notifikasi; false: menampilkan media
     in-out property <bool> show-notifs: false;
+    // true: akses notifikasi dicabut/ditolak Windows (pesan tampil di Home)
+    in-out property <bool> notif-access-denied: false;
 
     // --- kalender (Langkah 14) ---
     // judul bulan, mis. "October 2026"
@@ -353,6 +355,7 @@ export component MainWindow inherits Window {
                     battery-charging: root.battery-charging;
                     notif-total: root.notif-total;
                     notifs: root.notifs;
+                    notif-access-denied: root.notif-access-denied;
                     has-media: root.has-media;
                     track-title: root.track-title;
                     track-artist: root.track-artist;

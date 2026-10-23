@@ -7,8 +7,14 @@ The main goal of the project is **low memory use and near-zero idle CPU**. It ru
 ## Features
 
 - **Idle strip & animated expand:** Idle state is a subtle 4 px strip at the top edge of the screen; hovering expands it smoothly into a dynamic island pill.
+- **Tabbed island:** expanded view has Home, Calendar, Timer, and Tasks tabs; the island resizes per tab and remembers the last tab while running.
+- **Home:** clock and date, the latest notification with a count badge, CPU/RAM/GPU/battery chips, and a media row when something is playing.
 - **Now Playing media controls:** Tracks media title, artist, and playback state in real time via Windows SMTC events. Includes on-screen Previous, Play/Pause, and Next buttons.
-- **Action Center notifications:** Reads active toast notifications, grouping duplicates and cleaning text. A badge shows the notification count; clicking it switches between media and notifications. Automatically shows notifications on hover if nothing is playing.
+- **Action Center notifications:** Reads active toast notifications when the pill opens (no polling), grouping duplicates and cleaning text. A one-line summary sits in Home and a detailed view is one click away. If notification access is denied or revoked, Home says so instead of failing silently.
+- **Schedule reminders:** one-shot local reminders (`HH:MM label`) in the Timer tab, stored in `%APPDATA%\winisland\schedule.json`. Firing expands the pill automatically; overdue reminders fire on the next start. No polling.
+- **Timer & Stopwatch:** countdown with presets and a single-shot alarm that wakes the pill, plus a centisecond stopwatch.
+- **Quick Tasks:** a local to-do list persisted to `%APPDATA%\winisland\tasks.json` with atomic writes and backup recovery.
+- **Volume OSD:** an event-driven volume popup appears when the system volume changes (no polling).
 - **Notification privacy switch:** By default, only app names, titles, and age are shown (message bodies are never fetched). Enable "Notification body: Shown" from the tray menu to display message contents.
 - **Multi-monitor & DPI-aware placement:** Accurately places the overlay at the top-center of the active screen across mixed DPIs and negative coordinates. Cycle displays directly from the tray menu.
 - **Fullscreen app detection:** Automatically suppresses the overlay when playing fullscreen games or watching fullscreen videos (YouTube, media players) to prevent distraction or accidental clicks. Can be toggled on/off in the tray menu.
@@ -27,7 +33,7 @@ Developed and tested on Windows 11.
 
 Known behaviors & notes:
 - **Notification polling:** Notifications are fetched when the pill expands. Windows does not allow unpackaged Win32 apps to register for `NotificationChanged` events, so notifications do not push updates on their own.
-- **Memory footprint:** In the `dist` build, executable size is ~7.4 MB. RAM usage is ~2.9 MB private working set at startup and ~4.3 MB after reading notifications (due to WinRT runtime activation). Idle CPU is 0%.
+- **Memory footprint:** In the `dist` build, executable size is ~7.9 MB. RAM usage is ~7.5 MB private working set at idle (measured 23 Oct 2026, before any notification fetch; the pre-Phase-2 baseline was 2.9–4.3 MB). Idle CPU is 0% (0 ms of process CPU over a 10 s window), even though the fullscreen detector still polls every 500 ms.
 - **Windows 10:** Untested (Windows 11 recommended).
 
 ## Build from source

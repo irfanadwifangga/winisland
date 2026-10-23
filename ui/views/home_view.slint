@@ -14,6 +14,7 @@ export component HomeView inherits VerticalLayout {
     in property <bool> battery-charging;
     in property <int> notif-total;
     in property <[NotifRow]> notifs;
+    in property <bool> notif-access-denied: false;
     in property <bool> has-media;
     in property <string> track-title;
     in property <string> track-artist;
@@ -158,19 +159,25 @@ export component HomeView inherits VerticalLayout {
                     width: 6px;
                     height: 6px;
                     border-radius: 3px;
-                    background: root.notif-total > 0 ? #ef4444 : #52525b;
+                    background: root.notif-access-denied
+                        ? #facc15
+                        : (root.notif-total > 0 ? #ef4444 : #52525b);
                     y: (parent.height - self.height) / 2;
                 }
 
                 Text {
-                    text: root.notif-total > 0 ? (
+                    text: root.notif-access-denied
+                        ? "Notification access denied — allow it in Windows Settings"
+                        : root.notif-total > 0 ? (
                         root.notifs.length > 0 ? (
                             root.notifs[0].title != "" ?
                                 "\{root.notifs[0].header}: \{root.notifs[0].title}" :
                                 root.notifs[0].header
                         ) : "\{root.notif-total} notifications"
                     ) : "No new notifications";
-                    color: root.notif-total > 0 ? #e4e4e7 : #71717a;
+                    color: root.notif-access-denied
+                        ? #facc15
+                        : (root.notif-total > 0 ? #e4e4e7 : #71717a);
                     font-size: 11px;
                     font-weight: root.notif-total > 0 ? 500 : 400;
                     overflow: elide;

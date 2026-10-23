@@ -41,19 +41,23 @@ pub(crate) fn refresh(weak: slint::Weak<MainWindow>) {
     let include_body = config::show_body();
     std::thread::spawn(move || {
         let _guard = NotifFetchGuard;
-        let snapshot = match notif::fetch(include_body) {
-            Ok(Fetch::Ready(s)) => Some(s),
+        // `access_denied` menandai akses notifikasi dicabut: ditampilkan di pill,
+        // bukan hanya di log konsol.
+        let (snapshot, access_denied) = match notif::fetch(include_body) {
+            Ok(Fetch::Ready(s)) => (Some(s), false),
             Ok(Fetch::NoAccess) => {
                 eprintln!("[notif] access not granted");
-                None
+                (None, true)
             }
             Err(e) => {
                 eprintln!("[notif] FAILED: {e}");
-                None
+                (None, false)
             }
         };
         let now = ticks_from_unix_secs(unix_now_secs());
-        let _ = weak.upgrade_in_event_loop(move |ui| apply_notifications(&ui, snapshot, now));
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            apply_notifications(&ui, snapshot, access_denied, now)
+        });
     });
 }
 
@@ -62,7 +66,7 @@ pub(crate) fn refresh(weak: slint::Weak<MainWindow>) {
 ///
 /// Sakelar privasi dibaca SAAT INI, bukan saat pembacaan dimulai: bila pengguna baru saja
 /// memilih Hidden, isi dari pembacaan yang masih berjalan tidak boleh sampai ke layar.
-fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
+fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, access_denied: bool, now: i64) {
     let show_body = config::show_body();
     let (total, rows) = match snapshot {
         Some(s) => {
@@ -95,6 +99,7 @@ fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
     let len = rows.len() as i32;
     ui.set_notifs(ModelRc::new(VecModel::from(rows)));
     ui.set_notif_total(total);
+    ui.set_notif_access_denied(access_denied);
     // jaga indeks tetap valid bila daftar menyusut saat sedang dilihat
     if ui.get_notif_index() >= len {
         ui.set_notif_index(0);
@@ -120,7 +125,7 @@ pub(crate) fn register_privacy(ui: &MainWindow, tray: &AppTray) {
             if let Some(ui) = ui_weak.upgrade() {
                 // buang notifikasi yang sudah tampil supaya isi lama tidak tersisa;
                 // hover berikutnya membaca ulang, atau sekarang bila pill sedang terbuka
-                apply_notifications(&ui, None, 0);
+                apply_notifications(&ui, None, false, 0);
                 if ui.get_expanded() {
                     refresh(ui_weak.clone());
                 }
