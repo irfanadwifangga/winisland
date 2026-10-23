@@ -17,11 +17,11 @@
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Timer, TimerMode};
 
 slint::include_modules!();
 
@@ -35,9 +35,10 @@ use crate::core::window::{
     VOLUME_OSD_WINDOW_W,
 };
 use crate::core::{autostart, config, fullscreen, monitor};
-use crate::plugins::notif::Fetch;
-use crate::plugins::notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
-use crate::plugins::{gpu, media, notif, stats, timer, volume};
+use crate::plugins::{gpu, stats, timer, volume};
+// `notif::debug_run` hanya ada di build debug; impor tidak boleh bocor ke build rilis.
+#[cfg(debug_assertions)]
+use crate::plugins::notif;
 
 /// Mengambil waktu lokal sistem saat ini dalam format "HH:MM".
 pub fn local_time_string() -> String {
@@ -73,97 +74,6 @@ pub fn local_time_string() -> String {
     }
 
     format!("{:02}:{:02}", st.w_hour, st.w_minute)
-}
-
-/// Penjaga agar hanya satu pembacaan notifikasi berjalan pada satu waktu.
-static NOTIF_FETCHING: AtomicBool = AtomicBool::new(false);
-
-/// Mengembalikan `NOTIF_FETCHING` ke `false` saat di-drop, termasuk bila thread pembaca
-/// panic, supaya pembacaan berikutnya tidak terkunci selamanya.
-struct NotifFetchGuard;
-
-impl Drop for NotifFetchGuard {
-    fn drop(&mut self) {
-        NOTIF_FETCHING.store(false, Ordering::Release);
-    }
-}
-
-/// Detik sejak epoch Unix untuk saat ini; 0 bila jam sistem lebih awal dari 1970.
-fn unix_now_secs() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
-/// Membaca notifikasi di thread latar (pembacaan WinRT memblokir 12-50 ms), lalu mengirim
-/// hasilnya ke UI. Dilewati bila pembacaan sebelumnya belum selesai.
-/// Isi pesan hanya dibaca bila sakelar privasi (`config::show_body`) aktif.
-fn refresh_notifications(weak: slint::Weak<MainWindow>) {
-    if NOTIF_FETCHING.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    let include_body = config::show_body();
-    std::thread::spawn(move || {
-        let _guard = NotifFetchGuard;
-        let snapshot = match notif::fetch(include_body) {
-            Ok(Fetch::Ready(s)) => Some(s),
-            Ok(Fetch::NoAccess) => {
-                eprintln!("[notif] access not granted");
-                None
-            }
-            Err(e) => {
-                eprintln!("[notif] FAILED: {e}");
-                None
-            }
-        };
-        let now = ticks_from_unix_secs(unix_now_secs());
-        let _ = weak.upgrade_in_event_loop(move |ui| apply_notifications(&ui, snapshot, now));
-    });
-}
-
-/// Mengisi properti notifikasi di UI; dipanggil di thread UI. `None` (akses ditolak atau
-/// pembacaan gagal) mengosongkan daftar sehingga lencana tersembunyi.
-///
-/// Sakelar privasi dibaca SAAT INI, bukan saat pembacaan dimulai: bila pengguna baru saja
-/// memilih Hidden, isi dari pembacaan yang masih berjalan tidak boleh sampai ke layar.
-fn apply_notifications(ui: &MainWindow, snapshot: Option<Snapshot>, now: i64) {
-    let show_body = config::show_body();
-    let (total, rows) = match snapshot {
-        Some(s) => {
-            let rows: Vec<NotifRow> = s
-                .items
-                .iter()
-                .map(|it| {
-                    let header = if it.count > 1 {
-                        format!("{} ×{}", it.app, it.count)
-                    } else {
-                        it.app.clone()
-                    };
-                    let body = if show_body {
-                        it.body.clone()
-                    } else {
-                        String::new()
-                    };
-                    NotifRow {
-                        header: header.into(),
-                        title: it.title.clone().into(),
-                        body: body.into(),
-                        age: format_age(age_secs(it.time, now)).into(),
-                    }
-                })
-                .collect();
-            (s.total as i32, rows)
-        }
-        None => (0, Vec::new()),
-    };
-    let len = rows.len() as i32;
-    ui.set_notifs(ModelRc::new(VecModel::from(rows)));
-    ui.set_notif_total(total);
-    // jaga indeks tetap valid bila daftar menyusut saat sedang dilihat
-    if ui.get_notif_index() >= len {
-        ui.set_notif_index(0);
-    }
 }
 
 /// Memperbarui statistik sistem (CPU %, RAM %, GPU %, status baterai, dan tanggal lokal) pada UI.
@@ -220,34 +130,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = MainWindow::new()?;
     ui.show()?;
 
-    // --- media: langganan event SMTC lewat worker thread
-    // `media_ctl` meminta worker membaca ulang (saat hover, sebagai jaring pengaman)
-    // dan mengirim perintah tombol.
-    let media_ctl = {
-        let weak = ui.as_weak();
-        media::spawn_watcher(move |info| {
-            let (title, artist, playing, has_media) = match info {
-                Some(m) => (m.title, m.artist, m.playing, true),
-                None => ("Nothing playing".to_string(), String::new(), false, false),
-            };
-            let _ = weak.upgrade_in_event_loop(move |ui| {
-                ui.set_track_title(title.into());
-                ui.set_track_artist(artist.into());
-                ui.set_playing(playing);
-                ui.set_has_media(has_media);
-            });
-        })
-    };
-
-    // --- tombol kontrol media: perintah dikirim ke worker, tidak memblokir UI
-    {
-        let ctl = media_ctl.clone();
-        ui.on_play_pause(move || ctl.toggle_play_pause());
-        let ctl = media_ctl.clone();
-        ui.on_skip_next(move || ctl.skip_next());
-        let ctl = media_ctl.clone();
-        ui.on_skip_previous(move || ctl.skip_previous());
-    }
+    let media_ctl = bindings::media::register(&ui);
 
     // --- hover peek & click expand (model 3-state) ---
     // Saat hover: masuk ke mode Peek (tampilkan jam, jendela tipis 34 px).
@@ -400,7 +283,7 @@ fn main() -> Result<(), slint::PlatformError> {
             }
 
             media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
-            refresh_notifications(weak.clone()); // baca notifikasi di thread latar
+            bindings::notif::refresh(weak.clone()); // baca notifikasi di thread latar
         });
     }
 
@@ -578,30 +461,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // sakelar privasi isi notifikasi: menu mengikuti keadaan di memori
-    tray.set_show_notif_body(config::show_body());
-    {
-        let tray_weak = tray.as_weak();
-        let ui_weak = ui.as_weak();
-        tray.on_toggle_notif_body(move |wanted| {
-            // memori diubah lebih dulu di dalam set_show_body, jadi berlaku seketika
-            // walau penyimpanan ke registry gagal
-            if let Err(e) = config::set_show_body(wanted) {
-                eprintln!("[config] failed to save the notification body setting: {e}");
-            }
-            if let Some(tray) = tray_weak.upgrade() {
-                tray.set_show_notif_body(config::show_body());
-            }
-            if let Some(ui) = ui_weak.upgrade() {
-                // buang notifikasi yang sudah tampil supaya isi lama tidak tersisa;
-                // hover berikutnya membaca ulang, atau sekarang bila pill sedang terbuka
-                apply_notifications(&ui, None, 0);
-                if ui.get_expanded() {
-                    refresh_notifications(ui_weak.clone());
-                }
-            }
-        });
-    }
+    bindings::notif::register_privacy(&ui, &tray);
 
     // status awal label display di menu tray
     tray.set_display_label(monitor::monitor_label(config::monitor_index()).into());
