@@ -16,46 +16,28 @@
 //! Renderer dikunci ke software lewat `BackendSelector` supaya pemakaian RAM tetap kecil.
 
 use std::cell::{Cell, RefCell};
-use std::ffi::c_void;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use slint::{ComponentHandle, ModelRc, PhysicalPosition, PhysicalSize, Timer, TimerMode, VecModel};
-use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SW_HIDE, SW_SHOWNA,
-    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-};
+use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
 
+mod bindings;
 mod core;
 mod plugins;
 
-use core::{autostart, config, fullscreen, monitor};
-use plugins::notif::Fetch;
-use plugins::notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
-use plugins::{calendar, gpu, media, notif, stats, tasks, timer, volume};
-
-/// Jumlah maksimum percobaan memasang style jendela. Handle jendela baru tersedia
-/// setelah event loop berjalan, jadi pemasangan perlu diulang sampai berhasil.
-const MAX_ATTEMPTS: u32 = 20;
-/// Jeda antar percobaan memasang style jendela, dalam milidetik.
-const RETRY_MS: u64 = 50;
-
-/// Batas ukuran jendela overlay (dalam piksel logis).
-/// Nilai aktual per state ditentukan oleh Slint sebagai sumber kebenaran (Langkah 12).
-pub const MIN_WINDOW_W: f32 = 140.0;
-pub const MIN_WINDOW_H: f32 = 4.0;
-pub const PEEK_WINDOW_W: f32 = 175.0;
-pub const PEEK_WINDOW_H: f32 = 40.0;
-pub const VOLUME_OSD_WINDOW_W: f32 = 220.0;
-pub const VOLUME_OSD_WINDOW_H: f32 = 44.0;
-pub const MAX_EXPANDED_W: f32 = 480.0;
-pub const MAX_EXPANDED_H: f32 = 300.0;
+use crate::core::window::{
+    current_window_size, hwnd_of, place, re_place, try_apply, MIN_WINDOW_H, MIN_WINDOW_W,
+    PEEK_WINDOW_H, PEEK_WINDOW_W, RETRY_MS, SHRINK_DELAY_MS, VOLUME_OSD_WINDOW_H,
+    VOLUME_OSD_WINDOW_W,
+};
+use crate::core::{autostart, config, fullscreen, monitor};
+use crate::plugins::notif::Fetch;
+use crate::plugins::notif_text::{age_secs, format_age, ticks_from_unix_secs, Snapshot};
+use crate::plugins::{gpu, media, notif, stats, timer, volume};
 
 /// Mengambil waktu lokal sistem saat ini dalam format "HH:MM".
 pub fn local_time_string() -> String {
@@ -91,102 +73,6 @@ pub fn local_time_string() -> String {
     }
 
     format!("{:02}:{:02}", st.w_hour, st.w_minute)
-}
-
-/// Membatasi ukuran jendela logis ke dalam batas aman (tidak melebihi batas atas).
-pub fn clamp_window_size(requested_w: f32, requested_h: f32) -> (f32, f32) {
-    let w = requested_w.clamp(MIN_WINDOW_W, MAX_EXPANDED_W);
-    let h = requested_h.clamp(MIN_WINDOW_H, MAX_EXPANDED_H);
-    (w, h)
-}
-
-/// Mengambil ukuran jendela logis saat ini dari properti Slint.
-fn current_window_size(ui: &MainWindow) -> (f32, f32) {
-    if ui.get_expanded() {
-        clamp_window_size(ui.get_requested_width(), ui.get_requested_height())
-    } else if ui.get_show_volume_osd() {
-        (VOLUME_OSD_WINDOW_W, VOLUME_OSD_WINDOW_H)
-    } else if ui.get_peek() {
-        (PEEK_WINDOW_W, PEEK_WINDOW_H)
-    } else {
-        (MIN_WINDOW_W, MIN_WINDOW_H)
-    }
-}
-/// Jeda sebelum jendela mengecil setelah collapse, dalam milidetik.
-/// Sedikit di atas durasi animasi (250 ms) supaya animasi tidak terpotong.
-const SHRINK_DELAY_MS: u64 = 280;
-
-/// Mengambil HWND Win32 dari jendela Slint.
-/// Mengembalikan `None` bila handle belum tersedia (jendela belum dibuat oleh event loop).
-fn hwnd_of(window: &slint::Window) -> Option<HWND> {
-    let handle = window.window_handle();
-    let wh = handle.window_handle().ok()?;
-    match wh.as_raw() {
-        RawWindowHandle::Win32(h) => Some(HWND(h.hwnd.get() as *mut c_void)),
-        _ => None,
-    }
-}
-
-/// Memasang style jendela overlay:
-/// - `WS_EX_TOOLWINDOW`: tidak muncul di taskbar dan Alt+Tab,
-/// - `WS_EX_NOACTIVATE`: tidak mencuri fokus saat diklik,
-/// - `WS_EX_APPWINDOW` dilepas.
-///
-/// Mengembalikan `true` bila kedua style yang diinginkan terpasang.
-fn apply_overlay_style(ui: &MainWindow) -> bool {
-    let Some(hwnd) = hwnd_of(ui.window()) else {
-        eprintln!("[overlay] HWND not available yet");
-        return false;
-    };
-    unsafe {
-        let before = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-        // jendela disembunyikan dulu supaya taskbar membaca ulang style-nya
-        let _ = ShowWindow(hwnd, SW_HIDE);
-        let wanted = (before | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0) & !WS_EX_APPWINDOW.0;
-        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted as isize);
-        let _ = ShowWindow(hwnd, SW_SHOWNA);
-        let now = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-        eprintln!("[overlay] exstyle before={before:#x} after={now:#x}");
-        now & WS_EX_TOOLWINDOW.0 != 0 && now & WS_EX_NOACTIVATE.0 != 0
-    }
-}
-
-/// Ukuran dalam piksel logis; dikonversi ke fisik sesuai DPI, lalu dipusatkan di tepi atas monitor pilihan.
-fn place(ui: &MainWindow, w: f32, h: f32) {
-    let sf = ui.window().scale_factor();
-    let pw = (w * sf).round() as u32;
-    let ph = (h * sf).round() as u32;
-    let mon = monitor::get_monitor(config::monitor_index());
-    let x = mon.left + (mon.width - pw as i32) / 2;
-    let y = mon.top;
-    ui.window().set_size(PhysicalSize::new(pw, ph));
-    ui.window().set_position(PhysicalPosition::new(x, y));
-    eprintln!(
-        "[overlay] place {pw}x{ph} on display {} at ({x}, {y})",
-        config::monitor_index()
-    );
-}
-
-/// Menempatkan ulang jendela di monitor pilihan dengan ukuran yang sesuai status expanded saat ini.
-fn re_place(ui: &MainWindow) {
-    let (w, h) = current_window_size(ui);
-    place(ui, w, h);
-}
-
-/// Memasang style overlay lalu menempatkan jendela dalam keadaan idle.
-/// Bila handle jendela belum tersedia, diulang setiap `RETRY_MS` sampai `MAX_ATTEMPTS`.
-fn try_apply(weak: slint::Weak<MainWindow>, attempt: u32) {
-    let Some(ui) = weak.upgrade() else { return };
-    if apply_overlay_style(&ui) {
-        place(&ui, MIN_WINDOW_W, MIN_WINDOW_H);
-        eprintln!("[overlay] ready on attempt {attempt}");
-    } else if attempt < MAX_ATTEMPTS {
-        Timer::single_shot(Duration::from_millis(RETRY_MS), move || {
-            try_apply(weak, attempt + 1)
-        });
-    } else {
-        eprintln!("[overlay] FAILED after {MAX_ATTEMPTS} attempts");
-    }
 }
 
 /// Penjaga agar hanya satu pembacaan notifikasi berjalan pada satu waktu.
@@ -305,21 +191,6 @@ fn update_system_stats(
     ui.set_date_text(stats::local_date_string().into());
 }
 
-/// Memperbarui properti kalender di UI dari CalendarState.
-fn apply_calendar(ui: &MainWindow, state: &calendar::CalendarState) {
-    ui.set_cal_title(calendar::format_month_title(state.view_year, state.view_month).into());
-    let grid = state.generate_grid();
-    let cells: Vec<CalendarCell> = grid
-        .into_iter()
-        .map(|cell| CalendarCell {
-            text: cell.text.into(),
-            is_current_month: cell.is_current_month,
-            is_today: cell.is_today,
-        })
-        .collect();
-    ui.set_cal_cells(ModelRc::new(VecModel::from(cells)));
-}
-
 /// Memperbarui properti timer countdown di UI.
 fn apply_timer(ui: &MainWindow, timer: &timer::CountdownTimer) {
     ui.set_timer_display(timer.format_time().into());
@@ -334,22 +205,6 @@ fn apply_stopwatch(ui: &MainWindow, sw: &timer::Stopwatch) {
     ui.set_stopwatch_display(sw.format_time().into());
     ui.set_stopwatch_running(sw.is_running());
     ui.set_stopwatch_paused(sw.is_paused());
-}
-
-/// Memperbarui daftar tugas dan ringkasan jumlah tugas di UI.
-fn apply_tasks(ui: &MainWindow, mgr: &tasks::TaskManager) {
-    let rows: Vec<TaskRow> = mgr
-        .tasks()
-        .iter()
-        .map(|t| TaskRow {
-            id: t.id as i32,
-            text: t.text.as_str().into(),
-            done: t.done,
-        })
-        .collect();
-    ui.set_tasks(ModelRc::new(VecModel::from(rows)));
-    ui.set_tasks_remaining(mgr.remaining_count() as i32);
-    ui.set_tasks_completed(mgr.completed_count() as i32);
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -563,36 +418,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // --- kalender (Langkah 14) ---
-    let cal_state = Rc::new(RefCell::new(calendar::CalendarState::new()));
-    apply_calendar(&ui, &cal_state.borrow());
-    {
-        let weak = ui.as_weak();
-        let cal = cal_state.clone();
-        ui.on_cal_prev(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            cal.borrow_mut().prev_month();
-            apply_calendar(&ui, &cal.borrow());
-        });
-    }
-    {
-        let weak = ui.as_weak();
-        let cal = cal_state.clone();
-        ui.on_cal_next(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            cal.borrow_mut().next_month();
-            apply_calendar(&ui, &cal.borrow());
-        });
-    }
-    {
-        let weak = ui.as_weak();
-        let cal = cal_state.clone();
-        ui.on_cal_today(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            cal.borrow_mut().reset_to_today();
-            apply_calendar(&ui, &cal.borrow());
-        });
-    }
+    bindings::calendar::register(&ui);
 
     // --- timer & stopwatch callbacks (Langkah 15) ---
 
@@ -729,49 +555,7 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
-    // --- tasks (Langkah 17) ---
-    let task_mgr = Rc::new(RefCell::new(tasks::TaskManager::new()));
-    apply_tasks(&ui, &task_mgr.borrow());
-
-    {
-        let weak = ui.as_weak();
-        let tm = task_mgr.clone();
-        ui.on_task_add(move |text| {
-            let Some(ui) = weak.upgrade() else { return };
-            tm.borrow_mut().add_task(&text);
-            apply_tasks(&ui, &tm.borrow());
-        });
-    }
-
-    {
-        let weak = ui.as_weak();
-        let tm = task_mgr.clone();
-        ui.on_task_toggle(move |id| {
-            let Some(ui) = weak.upgrade() else { return };
-            tm.borrow_mut().toggle_task(id as u64);
-            apply_tasks(&ui, &tm.borrow());
-        });
-    }
-
-    {
-        let weak = ui.as_weak();
-        let tm = task_mgr.clone();
-        ui.on_task_delete(move |id| {
-            let Some(ui) = weak.upgrade() else { return };
-            tm.borrow_mut().remove_task(id as u64);
-            apply_tasks(&ui, &tm.borrow());
-        });
-    }
-
-    {
-        let weak = ui.as_weak();
-        let tm = task_mgr.clone();
-        ui.on_task_clear_completed(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            tm.borrow_mut().clear_completed();
-            apply_tasks(&ui, &tm.borrow());
-        });
-    }
+    bindings::tasks::register(&ui);
 
     // --- tray ---
     let tray = AppTray::new()?;
@@ -960,6 +744,7 @@ fn main() -> Result<(), slint::PlatformError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::window::{clamp_window_size, MAX_EXPANDED_H, MAX_EXPANDED_W};
 
     #[test]
     fn test_clamp_window_size_normal() {

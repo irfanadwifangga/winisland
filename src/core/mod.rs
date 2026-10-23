@@ -4,3 +4,4 @@ pub mod autostart;
 pub mod config;
 pub mod fullscreen;
 pub mod monitor;
+pub mod window;

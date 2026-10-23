@@ -214,11 +214,24 @@ pub fn serialize_tasks_json(tasks: &[TaskItem]) -> String {
 /// Memparsing daftar tugas dari string JSON sederhana.
 pub fn parse_tasks_json(json: &str) -> Vec<TaskItem> {
     let mut tasks = Vec::new();
-    // Cari setiap blok objek { ... }
+    // Kurung kurawal di dalam string bukan batas objek JSON.
     let mut in_object = false;
+    let mut in_string = false;
+    let mut escaped = false;
     let mut current_obj = String::new();
 
     for c in json.chars() {
+        if in_object && in_string {
+            current_obj.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
         if c == '{' {
             in_object = true;
             current_obj.clear();
@@ -228,6 +241,9 @@ pub fn parse_tasks_json(json: &str) -> Vec<TaskItem> {
                 tasks.push(item);
             }
         } else if in_object {
+            if c == '"' {
+                in_string = true;
+            }
             current_obj.push(c);
         }
     }
