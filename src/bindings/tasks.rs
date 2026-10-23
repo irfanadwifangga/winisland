@@ -27,7 +27,7 @@ fn apply_tasks(ui: &MainWindow, mgr: &tasks::TaskManager) {
 pub(crate) fn register(ui: &MainWindow) {
     // --- tasks (Langkah 17) ---
     let task_mgr = Rc::new(RefCell::new(tasks::TaskManager::new()));
-    apply_tasks(&ui, &task_mgr.borrow());
+    apply_tasks(ui, &task_mgr.borrow());
 
     {
         let weak = ui.as_weak();

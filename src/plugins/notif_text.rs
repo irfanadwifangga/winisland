@@ -112,7 +112,7 @@ pub fn clean(s: &str, max_chars: usize) -> String {
 pub fn group(mut raw: Vec<RawNotif>, include_body: bool, max_items: usize) -> Snapshot {
     let total = raw.len() as u32;
     // sort_by stabil: urutan asli dipertahankan untuk waktu yang sama
-    raw.sort_by(|a, b| b.time.cmp(&a.time));
+    raw.sort_by_key(|a| std::cmp::Reverse(a.time));
 
     let mut items: Vec<NotifItem> = Vec::new();
     for r in raw {

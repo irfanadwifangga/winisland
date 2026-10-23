@@ -28,7 +28,7 @@ pub fn days_in_month(year: u16, month: u16) -> u16 {
 
 /// Mengecek apakah suatu tahun merupakan tahun kabisat (Gregorian).
 pub fn is_leap_year(year: u16) -> bool {
-    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    (year.is_multiple_of(4) && !year.is_multiple_of(100)) || year.is_multiple_of(400)
 }
 
 /// Menghitung hari dalam seminggu untuk tanggal tertentu (0 = Sunday, 1 = Monday, ..., 6 = Saturday).
@@ -177,7 +177,7 @@ impl CalendarState {
         let mut cells = Vec::with_capacity(42);
 
         // 1. Sel padding bulan sebelumnya
-        let lead_days = first_weekday as u16;
+        let lead_days = first_weekday;
         for i in 0..lead_days {
             let day_num = prev_month_days - lead_days + i + 1;
             cells.push(CalendarCell {

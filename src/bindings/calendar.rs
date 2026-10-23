@@ -26,7 +26,7 @@ fn apply_calendar(ui: &MainWindow, state: &calendar::CalendarState) {
 pub(crate) fn register(ui: &MainWindow) {
     // --- kalender (Langkah 14) ---
     let cal_state = Rc::new(RefCell::new(calendar::CalendarState::new()));
-    apply_calendar(&ui, &cal_state.borrow());
+    apply_calendar(ui, &cal_state.borrow());
     {
         let weak = ui.as_weak();
         let cal = cal_state.clone();
