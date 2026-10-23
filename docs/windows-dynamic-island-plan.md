@@ -991,3 +991,38 @@ Temuan berasal dari pemeriksaan HEAD `05586e9`. Pembaruan awal hanya dokumentasi
 - **Pemeriksaan lain:** `cargo check --locked --offline`, `cargo fmt --all -- --check`, dan `git diff --check` lolos. Git memberi peringatan konversi LF ke CRLF pada `src/plugins/tasks.rs`, bukan kegagalan tes.
 - **Isolasi pengujian:** `TEMP`, `TMP`, dan `TMPDIR` diarahkan ke subfolder verifikasi di `target/` proyek untuk tes CRUD; tidak membaca atau menulis berkas Tasks pengguna.
 - **Batas:** tidak menjalankan UI, build `dist`, atau pengukuran RAM/CPU; penulisan aman JSON, stopwatch, dan Jadwal belum diperbaiki. Tidak memulihkan tugas yang sudah terhapus dari disk dan tidak membuat commit.
+
+---
+
+## 10. Sesi Hermes (23 Okt 2026): pembersihan, keamanan Tasks, siklus timer, Jadwal
+
+### 10.1 Keputusan pemilik (23 Okt 2026)
+
+- **Optimisasi RAM ditunda sampai semua fitur selesai.** Angka tetap dicatat sebagai pembanding, tanpa penyelidikan/bisect di tengah pengembangan fitur.
+- Persetujuan diberikan **per paket kerja** (audit → perbaikan → verifikasi → laporan → commit saat diminta), bukan per pratinjau patch kecil.
+- Tasks tetap menggantikan slot Mail; tidak ada integrasi akun/OAuth. Software renderer dan larangan dependensi baru dipertahankan.
+
+### 10.2 Log paket kerja
+
+| # | Isi | Hasil verifikasi | Commit |
+| --- | --- | --- | --- |
+| 1 | Clippy bersih (`-D warnings`), impor debug-only dikunci, baseline `dist` | fmt/clippy/check/test 60+4 lolos; `.exe` 8.242.688 B; private working set idle 7,48 MB; commit 8,95 MB; CPU 0 ms per 10 s | `f548064`, `86617a5` |
+| 2 | Penyimpanan Tasks atomik dan dapat dipulihkan (tmp+rename, `.bak`, ID di luar i32 dilewati) | 63+7 tes | `8c294fb` |
+| 3 | Siklus timer/stopwatch (tick 250 ms countdown, tick stopwatch berhenti saat tab lain), alarm menghormati hide/fullscreen + pulihkan tab, tinggi kalender 300 px (batas 320), fokus keyboard input Tasks, latar input dipindah ke Rectangle pembungkus | 69+7 tes; skip timer, input terlihat, dan kalender dikonfirmasi pemilik | `eb152a2` |
+| 4a | Fitur Jadwal v1: mode Schedule di tab Timer, tersimpan `%APPDATA%\winisland\schedule.json` (atomik, `.bak`), timer single-shot tanpa polling, pengingat terlewat dibunyikan saat startup, guard hide/fullscreen, pulihkan tab | 69+7 tes; perilaku UI perlu uji pemilik | `d6854ea` |
+| 4b | Perapian UI (berjalan): header kalender di tengah, progress bar timer 4 px + track lebih terang, lencana notifikasi 10 px | check/fmt/clippy/tes lolos; hasil visual menunggu screenshot pemilik | `b0994d9` |
+
+### 10.3 Temuan teknis (jangan diulang)
+
+- **`z: -1` anak di dalam `TextInput` menutupi teks induknya** di software renderer — `z` hanya mengurutkan antar-saudara. Latar input harus digambar elemen pembungkus.
+- **`WS_EX_NOACTIVATE` membuat klik tidak pernah mengaktifkan jendela**, jadi pengetikan butuh `SetForegroundWindow` + `SetFocus` tepat setelah klik (dipanggil lewat callback `has-focus` input). Feature crate `windows`: `Win32_UI_Input_KeyboardAndMouse`.
+- **Timer/stopwatch menghitung dari `Instant`**; tampilan di-refresh tick terpisah yang hanya jalan saat tab terkait terlihat. Fasa tick 1 detik membuat detik countdown melompat — pakai 250 ms.
+- **Build rilis (`dist`) mengeluarkan warning untuk impor debug-only**; kunci dengan `#[cfg(debug_assertions)]`.
+- Pengukuran RAM idle terakhir: private working set 7,48 MB tanpa fetch notifikasi (bandingkan dengan 2,9–4,3 MB pra-Fase 2; investigasi ditunda sesuai keputusan pemilik).
+
+### 10.4 Pekerjaan terbuka
+
+1. **Paket 4b:** perapian UI lanjutan menunggu screenshot pemilik (Home, Calendar, Timer, Tasks, Schedule).
+2. **Paket 5:** pembaruan `README.md`, `cargo-deny`/`cargo-license` sebelum rilis biner, pesan di pill saat akses notifikasi dicabut, uji GPU dengan perangkat nyata.
+3. **Optimisasi RAM/CPU** setelah semua fitur selesai (termasuk deteksi fullscreen tanpa polling 500 ms).
+4. Batasan parser JSON satu-field-per-baris berlaku untuk Tasks dan Jadwal.

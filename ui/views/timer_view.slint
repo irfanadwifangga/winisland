@@ -221,16 +221,16 @@ export component TimerView inherits VerticalLayout {
             // Progress bar halus
             if !root.timer-finished: Rectangle {
                 width: 180px;
-                height: 3px;
-                border-radius: 1.5px;
-                background: #27272a;
+                height: 4px;
+                border-radius: 2px;
+                background: #3f3f46;
 
                 Rectangle {
                     x: 0px;
                     y: 0px;
                     width: parent.width * root.timer-progress;
                     height: parent.height;
-                    border-radius: 1.5px;
+                    border-radius: 2px;
                     background: root.timer-running ? #3b82f6 : #71717a;
                 }
             }
