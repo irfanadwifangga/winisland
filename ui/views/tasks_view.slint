@@ -9,6 +9,8 @@ export component TasksView inherits VerticalLayout {
     callback task-toggle(int);
     callback task-delete(int);
     callback task-clear-completed();
+    // dipicu saat kolom input mendapat fokus Slint
+    callback input-focused();
 
     padding-left: 14px;
     padding-right: 14px;
@@ -21,33 +23,46 @@ export component TasksView inherits VerticalLayout {
         height: 28px;
         spacing: 6px;
 
-        input := TextInput {
+        // Latar digambar Rectangle pembungkus: anak dengan z: -1 di dalam TextInput
+        // tetap tergambar di atas teks induknya di software renderer (z hanya
+        // mengurutkan antar-saudara), sehingga teks yang diketik tidak terlihat.
+        Rectangle {
+            horizontal-stretch: 1;
             height: 28px;
-            font-size: 12px;
-            color: #f1f5f9;
-            vertical-alignment: center;
+            border-radius: 6px;
+            background: #1c1c1e;
+            border-width: 1px;
+            border-color: input.has-focus ? #3b82f6 : #2c2c2e;
 
-            Rectangle {
-                z: -1;
-                border-radius: 6px;
-                background: #1c1c1e;
-                border-width: 1px;
-                border-color: input.has-focus ? #3b82f6 : #2c2c2e;
-            }
-
-            // Placeholder buatan bila teks kosong
-            if input.text == "" && !input.has-focus: Text {
+            input := TextInput {
                 x: 8px;
-                text: "Add a new task...";
-                color: #636366;
+                height: parent.height;
                 font-size: 12px;
+                color: #f1f5f9;
                 vertical-alignment: center;
-            }
 
-            accepted => {
-                if input.text != "" {
-                    root.task-add(input.text);
-                    input.text = "";
+                // Placeholder buatan bila teks kosong
+                if input.text == "" && !input.has-focus: Text {
+                    text: "Add a new task...";
+                    color: #636366;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                }
+
+                accepted => {
+                    if input.text != "" {
+                        root.task-add(input.text);
+                        input.text = "";
+                    }
+                }
+
+                // jendela overlay tidak pernah aktif (WS_EX_NOACTIVATE): fokus Slint saja
+                // tidak cukup, keyboard OS tetap menuju aplikasi lain. Minta Rust
+                // memindahkan fokus keyboard sistem ke jendela overlay.
+                changed has-focus => {
+                    if input.has-focus {
+                        root.input-focused();
+                    }
                 }
             }
         }

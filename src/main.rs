@@ -30,8 +30,8 @@ mod core;
 mod plugins;
 
 use crate::core::window::{
-    current_window_size, hwnd_of, place, re_place, try_apply, MIN_WINDOW_H, MIN_WINDOW_W,
-    PEEK_WINDOW_H, PEEK_WINDOW_W, RETRY_MS, SHRINK_DELAY_MS, VOLUME_OSD_WINDOW_H,
+    current_window_size, focus_overlay, hwnd_of, place, re_place, try_apply, MIN_WINDOW_H,
+    MIN_WINDOW_W, PEEK_WINDOW_H, PEEK_WINDOW_W, RETRY_MS, SHRINK_DELAY_MS, VOLUME_OSD_WINDOW_H,
     VOLUME_OSD_WINDOW_W,
 };
 use crate::core::{autostart, config, fullscreen, monitor};
@@ -117,6 +117,49 @@ fn apply_stopwatch(ui: &MainWindow, sw: &timer::Stopwatch) {
     ui.set_stopwatch_paused(sw.is_paused());
 }
 
+/// Menjalankan ulang tick stopwatch (50 ms) bila stopwatch berjalan dan tab Timer
+/// sedang tampil. Dipanggil saat stopwatch dimulai, saat pill di-expand ulang, dan
+/// saat kembali ke tab Timer, supaya tampilan tidak membeku setelah collapse.
+fn start_stopwatch_tick(ui: &MainWindow, sw: &Rc<RefCell<timer::Stopwatch>>, sw_tick: &Rc<Timer>) {
+    if !sw.borrow().is_running() || !ui.get_expanded() || ui.get_active_tab() != 2 {
+        return;
+    }
+    let tick_weak = ui.as_weak();
+    let tick_sw = sw.clone();
+    sw_tick.start(TimerMode::Repeated, Duration::from_millis(50), move || {
+        if let Some(ui) = tick_weak.upgrade() {
+            // gambar hanya saat stopwatch berjalan dan tab Timer sedang terlihat
+            if tick_sw.borrow().is_running() && ui.get_expanded() && ui.get_active_tab() == 2 {
+                apply_stopwatch(&ui, &tick_sw.borrow());
+            }
+        }
+    });
+}
+
+/// Menjalankan ulang tick countdown (250 ms) bila countdown berjalan dan tab Timer
+/// sedang tampil. Tick 250 ms menjaga tampilan detik tidak melompat (fasa tick jam
+/// 1 detik bergantung pada saat hover dimulai).
+fn start_countdown_tick(
+    ui: &MainWindow,
+    ct: &Rc<RefCell<timer::CountdownTimer>>,
+    ct_tick: &Rc<Timer>,
+) {
+    if !ct.borrow().is_running() || !ui.get_expanded() || ui.get_active_tab() != 2 {
+        return;
+    }
+    let tick_weak = ui.as_weak();
+    let tick_ct = ct.clone();
+    ct_tick.start(TimerMode::Repeated, Duration::from_millis(250), move || {
+        if let Some(ui) = tick_weak.upgrade() {
+            // gambar hanya saat countdown berjalan dan tab Timer sedang terlihat
+            if tick_ct.borrow().is_running() && ui.get_expanded() && ui.get_active_tab() == 2 {
+                tick_ct.borrow_mut().check_finished();
+                apply_timer(&ui, &tick_ct.borrow());
+            }
+        }
+    });
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // baca preferensi dari registry dulu: sakelar privasi bawaannya tersembunyi
     config::load();
@@ -136,11 +179,17 @@ fn main() -> Result<(), slint::PlatformError> {
     // Saat hover: masuk ke mode Peek (tampilkan jam, jendela tipis 34 px).
     // Saat diklik: masuk ke mode Expanded (dynamic island penuh).
     // Saat mouse keluar: collapse kembali ke garis idle 4 px setelah `SHRINK_DELAY_MS`.
+    // status sembunyikan jendela: oleh pengguna (manual) atau oleh aplikasi fullscreen.
+    // Dibuat di sini karena alarm juga tidak boleh memunculkan overlay saat tersembunyi.
+    let user_hidden = Rc::new(Cell::new(false));
+    let fs_suppressed = Rc::new(Cell::new(false));
+
     // --- timer & stopwatch state (Langkah 15) ---
     let countdown_timer = Rc::new(RefCell::new(timer::CountdownTimer::default()));
     let stopwatch = Rc::new(RefCell::new(timer::Stopwatch::new()));
     let alarm_timer = Rc::new(Timer::default());
     let sw_tick_timer = Rc::new(Timer::default());
+    let ct_tick_timer = Rc::new(Timer::default());
 
     apply_timer(&ui, &countdown_timer.borrow());
     apply_stopwatch(&ui, &stopwatch.borrow());
@@ -265,6 +314,10 @@ fn main() -> Result<(), slint::PlatformError> {
         let media_ctl = media_ctl.clone();
         let cpu_tracker_expand = cpu_tracker.clone();
         let gpu_tracker_expand = gpu_tracker.clone();
+        let ct_expand = countdown_timer.clone();
+        let sw_expand = stopwatch.clone();
+        let sw_tick_expand = sw_tick_timer.clone();
+        let ct_tick_expand = ct_tick_timer.clone();
         ui.on_expand_clicked(move || {
             let Some(ui) = weak.upgrade() else { return };
             ui.set_show_volume_osd(false);
@@ -284,6 +337,13 @@ fn main() -> Result<(), slint::PlatformError> {
 
             media_ctl.refresh(); // minta worker membaca ulang (jaring pengaman)
             bindings::notif::refresh(weak.clone()); // baca notifikasi di thread latar
+                                                    // tampilan timer dan stopwatch diperbarui seketika saat dibuka ulang
+            if ct_expand.borrow().is_running() {
+                ct_expand.borrow_mut().check_finished();
+                apply_timer(&ui, &ct_expand.borrow());
+            }
+            start_stopwatch_tick(&ui, &sw_expand, &sw_tick_expand);
+            start_countdown_tick(&ui, &ct_expand, &ct_tick_expand);
         });
     }
 
@@ -292,11 +352,34 @@ fn main() -> Result<(), slint::PlatformError> {
     // menyesuaikan ukuran jendela secara dinamis.
     {
         let weak = ui.as_weak();
+        let sw_resize = stopwatch.clone();
+        let sw_tick_resize = sw_tick_timer.clone();
+        let ct_resize = countdown_timer.clone();
+        let ct_tick_resize = ct_tick_timer.clone();
         ui.on_request_window_resize(move || {
             let Some(ui) = weak.upgrade() else { return };
             if ui.get_expanded() {
                 let (w, h) = current_window_size(&ui);
                 place(&ui, w, h);
+                // tick stopwatch/countdown hanya perlu jalan saat tab Timer terlihat
+                if ui.get_active_tab() == 2 {
+                    start_stopwatch_tick(&ui, &sw_resize, &sw_tick_resize);
+                    start_countdown_tick(&ui, &ct_resize, &ct_tick_resize);
+                } else {
+                    sw_tick_resize.stop();
+                    ct_tick_resize.stop();
+                }
+            }
+        });
+    }
+
+    // fokus keyboard untuk kolom input Tasks: jendela overlay tidak pernah aktif
+    // (WS_EX_NOACTIVATE), jadi pengetikan butuh fokus OS dipindah ke jendela ini
+    {
+        let weak = ui.as_weak();
+        ui.on_tasks_input_focused(move || {
+            if let Some(ui) = weak.upgrade() {
+                focus_overlay(&ui);
             }
         });
     }
@@ -310,24 +393,48 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let ct = countdown_timer.clone();
         let at = alarm_timer.clone();
+        let ctt = ct_tick_timer.clone();
+        let hidden_start = user_hidden.clone();
+        let fs_start = fs_suppressed.clone();
         ui.on_timer_start(move || {
             let Some(ui) = weak.upgrade() else { return };
             ct.borrow_mut().start();
             apply_timer(&ui, &ct.borrow());
+            start_countdown_tick(&ui, &ct, &ctt);
 
             // Pasang single-shot alarm saat target waktu tercapai (0% CPU idle, tanpa polling)
             let rem = ct.borrow().remaining();
             let wake_weak = weak.clone();
             let wake_ct = ct.clone();
+            let wake_hidden = hidden_start.clone();
+            let wake_fs = fs_start.clone();
             at.start(TimerMode::SingleShot, rem, move || {
                 if let Some(ui) = wake_weak.upgrade() {
                     wake_ct.borrow_mut().check_finished();
                     apply_timer(&ui, &wake_ct.borrow());
-                    // Bangunkan overlay dan tampilkan alarm di tab Timer
-                    ui.set_expanded(true);
-                    ui.set_active_tab(2);
-                    let (w, h) = current_window_size(&ui);
-                    place(&ui, w, h);
+                    // Bangunkan overlay dan tampilkan alarm di tab Timer, tetapi
+                    // hormati sembunyikan manual dan fullscreen (tidak saling menimpa).
+                    if !wake_hidden.get() && !wake_fs.get() && ui.window().is_visible() {
+                        let prev_tab = ui.get_active_tab();
+                        ui.set_expanded(true);
+                        ui.set_active_tab(2);
+                        let (w, h) = current_window_size(&ui);
+                        place(&ui, w, h);
+
+                        // Pulihkan tab terakhir beberapa detik kemudian, kecuali
+                        // pengguna sudah berpindah tab atau mereset timer.
+                        let restore_weak = wake_weak.clone();
+                        Timer::single_shot(Duration::from_secs(10), move || {
+                            if let Some(ui) = restore_weak.upgrade() {
+                                if ui.get_active_tab() == 2 && ui.get_timer_finished() {
+                                    ui.set_active_tab(prev_tab);
+                                    ui.set_expanded(false);
+                                    let (w, h) = current_window_size(&ui);
+                                    place(&ui, w, h);
+                                }
+                            }
+                        });
+                    }
                 }
             });
         });
@@ -338,10 +445,12 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let ct = countdown_timer.clone();
         let at = alarm_timer.clone();
+        let ctt = ct_tick_timer.clone();
         ui.on_timer_pause(move || {
             let Some(ui) = weak.upgrade() else { return };
             ct.borrow_mut().pause();
             at.stop(); // hentikan alarm single-shot saat dijeda
+            ctt.stop(); // tampilan tidak berubah saat dijeda
             apply_timer(&ui, &ct.borrow());
         });
     }
@@ -351,10 +460,12 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let ct = countdown_timer.clone();
         let at = alarm_timer.clone();
+        let ctt = ct_tick_timer.clone();
         ui.on_timer_reset(move || {
             let Some(ui) = weak.upgrade() else { return };
             ct.borrow_mut().reset();
             at.stop();
+            ctt.stop();
             apply_timer(&ui, &ct.borrow());
         });
     }
@@ -364,9 +475,11 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let ct = countdown_timer.clone();
         let at = alarm_timer.clone();
+        let ctt = ct_tick_timer.clone();
         ui.on_timer_set_min(move |mins| {
             let Some(ui) = weak.upgrade() else { return };
             at.stop();
+            ctt.stop();
             ct.borrow_mut()
                 .set_duration(Duration::from_secs((mins.max(1) as u64) * 60));
             apply_timer(&ui, &ct.borrow());
@@ -378,9 +491,11 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = ui.as_weak();
         let ct = countdown_timer.clone();
         let at = alarm_timer.clone();
+        let ctt = ct_tick_timer.clone();
         ui.on_timer_adjust_min(move |delta| {
             let Some(ui) = weak.upgrade() else { return };
             at.stop();
+            ctt.stop();
             ct.borrow_mut().adjust_minutes(delta);
             apply_timer(&ui, &ct.borrow());
         });
@@ -395,20 +510,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(ui) = weak.upgrade() else { return };
             sw.borrow_mut().start();
             apply_stopwatch(&ui, &sw.borrow());
-
-            // Timer pembaruan cepat (50ms) hanya berjalan saat stopwatch aktif
-            let tick_weak = weak.clone();
-            let tick_sw = sw.clone();
-            sw_tick.start(TimerMode::Repeated, Duration::from_millis(50), move || {
-                if let Some(ui) = tick_weak.upgrade() {
-                    if tick_sw.borrow().is_running()
-                        && ui.get_expanded()
-                        && ui.get_active_tab() == 2
-                    {
-                        apply_stopwatch(&ui, &tick_sw.borrow());
-                    }
-                }
-            });
+            start_stopwatch_tick(&ui, &sw, &sw_tick);
         });
     }
 
@@ -442,10 +544,6 @@ fn main() -> Result<(), slint::PlatformError> {
 
     // --- tray ---
     let tray = AppTray::new()?;
-
-    // status sembunyikan jendela: oleh pengguna (manual) atau oleh aplikasi fullscreen
-    let user_hidden = Rc::new(Cell::new(false));
-    let fs_suppressed = Rc::new(Cell::new(false));
 
     // status awal centang menu mengikuti isi registry
     tray.set_autostart(autostart::is_enabled());

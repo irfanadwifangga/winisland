@@ -6,9 +6,10 @@ use std::time::Duration;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::{ComponentHandle, PhysicalPosition, PhysicalSize, Timer};
 use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SW_HIDE, SW_SHOWNA,
-    WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, ShowWindow, GWL_EXSTYLE, SW_HIDE,
+    SW_SHOWNA, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use crate::core::{config, monitor};
@@ -29,7 +30,8 @@ pub(crate) const PEEK_WINDOW_H: f32 = 40.0;
 pub(crate) const VOLUME_OSD_WINDOW_W: f32 = 220.0;
 pub(crate) const VOLUME_OSD_WINDOW_H: f32 = 44.0;
 pub(crate) const MAX_EXPANDED_W: f32 = 480.0;
-pub(crate) const MAX_EXPANDED_H: f32 = 300.0;
+// 320: tab Calendar butuh 300 px (bulan enam minggu) + celah floating 8 px.
+pub(crate) const MAX_EXPANDED_H: f32 = 320.0;
 
 /// Membatasi ukuran jendela logis ke dalam batas aman (tidak melebihi batas atas).
 pub(crate) fn clamp_window_size(requested_w: f32, requested_h: f32) -> (f32, f32) {
@@ -87,6 +89,22 @@ fn apply_overlay_style(ui: &MainWindow) -> bool {
         let now = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
         eprintln!("[overlay] exstyle before={before:#x} after={now:#x}");
         now & WS_EX_TOOLWINDOW.0 != 0 && now & WS_EX_NOACTIVATE.0 != 0
+    }
+}
+
+/// Memindahkan fokus keyboard sistem ke jendela overlay.
+///
+/// Jendela memakai `WS_EX_NOACTIVATE`, jadi klik tidak pernah mengaktifkannya dan
+/// pengetikan (mis. kolom input Tasks) tidak pernah sampai. Windows mengizinkan
+/// proses memanggil ini saat sedang menerima input mouse — tepat setelah klik.
+pub(crate) fn focus_overlay(ui: &MainWindow) {
+    let Some(hwnd) = hwnd_of(ui.window()) else {
+        return;
+    };
+    // SAFETY: HWND milik jendela Slint yang masih hidup; dipanggil dari thread UI.
+    unsafe {
+        let _ = SetForegroundWindow(hwnd);
+        let _ = SetFocus(Some(hwnd));
     }
 }
 

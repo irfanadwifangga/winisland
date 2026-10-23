@@ -96,6 +96,8 @@ export component MainWindow inherits Window {
     callback task-toggle(int);
     callback task-delete(int);
     callback task-clear-completed();
+    // kolom input Tasks mendapat fokus: minta fokus keyboard OS (jendela overlay tidak pernah aktif)
+    callback tasks-input-focused();
 
     // --- model tab dan ukuran dinamis (Langkah 12) ---
     // 0: Home, 1: Calendar, 2: Timer, 3: Mail. Diingat di memori.
@@ -115,7 +117,7 @@ export component MainWindow inherits Window {
             root.active-tab == 0 ? (
                 root.show-notifs ? 135px : (root.has-media ? 165px : 120px)
             ) :
-            root.active-tab == 1 ? 260px :
+            root.active-tab == 1 ? 300px :
             root.active-tab == 2 ? 185px :
             240px
         ) : (root.show-volume-osd ? 36px : (root.peek ? 32px : 4px));
@@ -409,6 +411,7 @@ export component MainWindow inherits Window {
                 task-toggle(id) => { root.task-toggle(id); }
                 task-delete(id) => { root.task-delete(id); }
                 task-clear-completed => { root.task-clear-completed(); }
+                input-focused => { root.tasks-input-focused(); }
             }
         }
     }
