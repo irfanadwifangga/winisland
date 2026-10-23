@@ -218,9 +218,8 @@ export component TimerView inherits VerticalLayout {
                 horizontal-alignment: center;
             }
 
-            // Progress bar halus
+            // Progress bar halus: lebar penuh mengikuti konten tab
             if !root.timer-finished: Rectangle {
-                width: 180px;
                 height: 4px;
                 border-radius: 2px;
                 background: #3f3f46;
