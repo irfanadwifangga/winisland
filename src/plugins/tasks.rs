@@ -5,6 +5,7 @@
 //! menjamin pemakaian memori minimal, kompilasi cepat, dan 0% CPU idle.
 
 use std::fs;
+use std::io;
 use std::path::PathBuf;
 
 /// Satu butir tugas dalam daftar.
@@ -78,7 +79,9 @@ impl TaskManager {
             done: false,
         });
 
-        self.save();
+        if let Err(e) = self.save() {
+            eprintln!("[tasks] FAILED to save: {e}");
+        }
         Some(id)
     }
 
@@ -86,7 +89,9 @@ impl TaskManager {
     pub fn toggle_task(&mut self, id: u64) -> bool {
         if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
             task.done = !task.done;
-            self.save();
+            if let Err(e) = self.save() {
+                eprintln!("[tasks] FAILED to save: {e}");
+            }
             true
         } else {
             false
@@ -98,7 +103,9 @@ impl TaskManager {
         let before_len = self.tasks.len();
         self.tasks.retain(|t| t.id != id);
         if self.tasks.len() != before_len {
-            self.save();
+            if let Err(e) = self.save() {
+                eprintln!("[tasks] FAILED to save: {e}");
+            }
             true
         } else {
             false
@@ -111,7 +118,9 @@ impl TaskManager {
         self.tasks.retain(|t| !t.done);
         let removed = before_len - self.tasks.len();
         if removed > 0 {
-            self.save();
+            if let Err(e) = self.save() {
+                eprintln!("[tasks] FAILED to save: {e}");
+            }
         }
         removed
     }
@@ -125,21 +134,59 @@ impl TaskManager {
             return;
         }
 
-        if let Ok(content) = fs::read_to_string(&self.file_path) {
-            let parsed = parse_tasks_json(&content);
-            let max_id = parsed.iter().map(|t| t.id).max().unwrap_or(0);
-            self.next_id = max_id + 1;
-            self.tasks = parsed;
+        match fs::read_to_string(&self.file_path) {
+            Ok(content) => {
+                let parsed = parse_tasks_json(&content);
+                if parsed.is_empty() && content.trim() != "[]" {
+                    // Berkas terbaca tetapi tidak menghasilkan satu pun tugas:
+                    // hampir pasti korup atau terpotong. Pindah ke .bak supaya
+                    // simpanan berikutnya tidak menimpa data lama.
+                    let bak = self.file_path.with_extension("json.bak");
+                    if let Err(re) = fs::rename(&self.file_path, &bak) {
+                        eprintln!("[tasks] FAILED to back up unreadable file: {re}");
+                    } else {
+                        eprintln!("[tasks] unreadable file moved to {bak:?}");
+                    }
+                    self.tasks.clear();
+                    self.next_id = 1;
+                } else {
+                    // ID di UI Slint bertipe i32: butir dengan ID di luar rentang itu
+                    // dilewatkan agar pemetaan ID UI tetap valid dan next_id tidak meluber.
+                    self.tasks = parsed
+                        .into_iter()
+                        .filter(|t| t.id <= i32::MAX as u64)
+                        .collect();
+                    let max_id = self.tasks.iter().map(|t| t.id).max().unwrap_or(0);
+                    self.next_id = max_id.saturating_add(1).min(i32::MAX as u64);
+                }
+            }
+            Err(e) => {
+                // Berkas rusak atau tidak terbaca: jangan ditimpa diam-diam.
+                // Pindah ke .bak supaya data lama masih bisa dipulihkan manual.
+                let bak = self.file_path.with_extension("json.bak");
+                if let Err(re) = fs::rename(&self.file_path, &bak) {
+                    eprintln!("[tasks] FAILED to back up unreadable file: {re}");
+                } else {
+                    eprintln!("[tasks] unreadable file moved to {bak:?} ({e})");
+                }
+                self.tasks.clear();
+                self.next_id = 1;
+            }
         }
     }
 
     /// Menyimpan daftar tugas ke file JSON di disk.
-    pub fn save(&self) {
+    fn save(&self) -> io::Result<()> {
         if let Some(parent) = self.file_path.parent() {
-            let _ = fs::create_dir_all(parent);
+            fs::create_dir_all(parent)?;
         }
         let json = serialize_tasks_json(&self.tasks);
-        let _ = fs::write(&self.file_path, json);
+        // Tulis ke berkas sementara lalu ganti nama: proses mati di tengah menulis
+        // tidak meninggalkan tasks.json yang terpotong. `fs::rename` menggantikan
+        // berkas tujuan yang sudah ada, termasuk di Windows.
+        let tmp = self.file_path.with_extension("json.tmp");
+        fs::write(&tmp, json)?;
+        fs::rename(&tmp, &self.file_path)
     }
 }
 
@@ -366,6 +413,88 @@ pub(crate) mod tests {
         assert_eq!(mgr_reloaded.tasks().len(), 0);
 
         // Bersihkan berkas uji
+        let _ = fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_load_corrupt_file_backs_up_instead_of_overwriting() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!("test_tasks_corrupt_{}.json", std::process::id()));
+        let bak = file_path.with_extension("json.bak");
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_file(&bak);
+
+        // berkas sengaja tidak lengkap (proses mati saat menulis, misalnya)
+        fs::write(&file_path, "[{\"id\": 1, \"text\": \"tengah").unwrap();
+
+        let mut mgr = TaskManager::with_path(file_path.clone());
+        assert_eq!(mgr.tasks().len(), 0);
+        assert!(
+            bak.exists(),
+            "berkas lama harus dipindah ke .bak, bukan ditimpa"
+        );
+
+        // simpan berikutnya menulis tasks.json yang valid kembali
+        let id = mgr.add_task("setelah pemulihan").expect("should add");
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("setelah pemulihan"));
+        assert_eq!(id, 1);
+
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_file(&bak);
+    }
+
+    #[test]
+    fn test_save_failure_is_reported_not_silent() {
+        let temp_dir = std::env::temp_dir();
+        // parent "folder" sengaja berupa berkas: create_dir_all pasti gagal
+        let blocker = temp_dir.join(format!("test_tasks_blocker_{}.json", std::process::id()));
+        let _ = fs::remove_file(&blocker);
+        fs::write(&blocker, "penanda").unwrap();
+        let file_path = blocker.join("tasks.json");
+
+        let mut mgr = TaskManager::with_path(file_path);
+        let id = mgr.add_task("tidak tersimpan");
+        assert!(id.is_some(), "data tetap ada di memori walau simpan gagal");
+        assert!(
+            mgr.save().is_err(),
+            "kegagalan penyimpanan harus terlihat sebagai error"
+        );
+
+        let _ = fs::remove_file(&blocker);
+    }
+
+    #[test]
+    fn test_load_skips_ids_beyond_slint_i32_range() {
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!("test_tasks_bigid_{}.json", std::process::id()));
+        let _ = fs::remove_file(&file_path);
+
+        fs::write(
+            &file_path,
+            // format satu-field-per-baris sesuai output serialize_tasks_json
+            r#"[
+  {
+    "id": 99999999999,
+    "text": "di luar rentang",
+    "done": false
+  },
+  {
+    "id": 5,
+    "text": "masuk",
+    "done": true
+  }
+]"#,
+        )
+        .unwrap();
+
+        let mut mgr = TaskManager::with_path(file_path.clone());
+        assert_eq!(mgr.tasks().len(), 1);
+        assert_eq!(mgr.tasks()[0].id, 5);
+        // ID baru lanjut dari butir yang valid, bukan dari ID raksasa
+        let id = mgr.add_task("baru").expect("should add");
+        assert_eq!(id, 6);
+
         let _ = fs::remove_file(&file_path);
     }
 }
