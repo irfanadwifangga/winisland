@@ -199,8 +199,8 @@ fn default_tasks_path() -> PathBuf {
     }
 }
 
-/// Melakukan escape karakter khusus untuk string JSON.
-fn json_escape(s: &str) -> String {
+/// Melakukan escape karakter khusus untuk string JSON. Dipakai juga modul schedule.
+pub(crate) fn json_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     for c in s.chars() {
         match c {
@@ -215,8 +215,8 @@ fn json_escape(s: &str) -> String {
     out
 }
 
-/// Mengubah escape sequence JSON kembali ke string biasa.
-fn json_unescape(s: &str) -> String {
+/// Mengubah escape sequence JSON kembali ke string biasa. Dipakai juga modul schedule.
+pub(crate) fn json_unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
     while let Some(c) = chars.next() {

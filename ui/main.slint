@@ -1,6 +1,6 @@
 import { PlayIcon, SpeakerIcon } from "components/icons.slint";
 import { TabItem } from "components/buttons.slint";
-import { NotifRow, CalendarCell, TaskRow } from "models.slint";
+import { NotifRow, CalendarCell, TaskRow, ScheduleRow } from "models.slint";
 import { TasksView } from "views/tasks_view.slint";
 import { HomeView } from "views/home_view.slint";
 import { NotifView } from "views/notif_view.slint";
@@ -8,7 +8,7 @@ import { CalendarView } from "views/calendar_view.slint";
 import { TimerView } from "views/timer_view.slint";
 
 // Re-export struct agar dapat diakses oleh kode Rust melalui slint::include_modules!().
-export { NotifRow, CalendarCell, TaskRow }
+export { NotifRow, CalendarCell, TaskRow, ScheduleRow }
 
 export component MainWindow inherits Window {
     default-font-family: "SF Pro Display, Segoe UI Variable Display, Segoe UI, sans-serif";
@@ -91,6 +91,14 @@ export component MainWindow inherits Window {
     in-out property <[TaskRow]> tasks: [];
     in-out property <int> tasks-remaining: 0;
     in-out property <int> tasks-completed: 0;
+
+    // --- jadwal / pengingat (Timer, mode Schedule) ---
+    in-out property <[ScheduleRow]> schedules: [];
+
+    callback schedule-add(string);
+    callback schedule-delete(int);
+    // kolom input Jadwal mendapat fokus: minta fokus keyboard OS (seperti Tasks)
+    callback schedule-input-focused();
 
     callback task-add(string);
     callback task-toggle(int);
@@ -397,6 +405,11 @@ export component MainWindow inherits Window {
                 stopwatch-start => { root.stopwatch-start(); }
                 stopwatch-pause => { root.stopwatch-pause(); }
                 stopwatch-reset => { root.stopwatch-reset(); }
+
+                schedules: root.schedules;
+                schedule-add(text) => { root.schedule-add(text); }
+                schedule-delete(id) => { root.schedule-delete(id); }
+                schedule-input-focused => { root.schedule-input-focused(); }
             }
 
             // --- konten tab Tasks (active-tab == 3, Langkah 17) ---

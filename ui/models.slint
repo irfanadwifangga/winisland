@@ -29,3 +29,11 @@ export struct TaskRow {
     text: string,
     done: bool,
 }
+
+// Satu pengingat terjadwal untuk tab Timer (mode Schedule). Waktu sudah berupa
+// teks "HH:MM" siap tampil (disusun di Rust).
+export struct ScheduleRow {
+    id: int,
+    time: string,
+    label: string,
+}

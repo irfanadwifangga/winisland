@@ -35,7 +35,7 @@ use crate::core::window::{
     VOLUME_OSD_WINDOW_W,
 };
 use crate::core::{autostart, config, fullscreen, monitor};
-use crate::plugins::{gpu, stats, timer, volume};
+use crate::plugins::{gpu, schedule, stats, timer, volume};
 // `notif::debug_run` hanya ada di build debug; impor tidak boleh bocor ke build rilis.
 #[cfg(debug_assertions)]
 use crate::plugins::notif;
@@ -158,6 +158,58 @@ fn start_countdown_tick(
             }
         }
     });
+}
+
+/// Memasang ulang timer pengingat (Jadwal) dan mengeluarkan semua pengingat yang
+/// sudah jatuh tempo — termasuk yang terlewat saat aplikasi mati atau komputer
+/// tidur. Tanpa polling: satu timer single-shot untuk jadwal terdekat, dipasang
+/// ulang hanya saat daftar berubah atau pengingat berbunyi.
+fn service_schedules(
+    ui: &MainWindow,
+    mgr: &Rc<RefCell<schedule::ScheduleManager>>,
+    timer: &Rc<Timer>,
+    user_hidden: &Rc<Cell<bool>>,
+    fs_suppressed: &Rc<Cell<bool>>,
+) {
+    let due = mgr.borrow_mut().take_due();
+    if !due.is_empty() {
+        bindings::schedule::apply_schedules(ui, &mgr.borrow());
+        // Bangunkan overlay dan tampilkan tab Timer mode Schedule, tetapi hormati
+        // sembunyikan manual dan fullscreen (pola yang sama dengan alarm timer).
+        if !user_hidden.get() && !fs_suppressed.get() && ui.window().is_visible() {
+            let prev_tab = ui.get_active_tab();
+            ui.set_timer_mode(2);
+            ui.set_active_tab(2);
+            ui.set_expanded(true);
+            let (w, h) = current_window_size(ui);
+            place(ui, w, h);
+
+            let restore_weak = ui.as_weak();
+            Timer::single_shot(Duration::from_secs(10), move || {
+                if let Some(ui) = restore_weak.upgrade() {
+                    if ui.get_active_tab() == 2 && ui.get_timer_mode() == 2 {
+                        ui.set_active_tab(prev_tab);
+                        ui.set_expanded(false);
+                        let (w, h) = current_window_size(&ui);
+                        place(&ui, w, h);
+                    }
+                }
+            });
+        }
+    }
+
+    if let Some(d) = mgr.borrow().next_duration() {
+        let weak = ui.as_weak();
+        let mgr2 = mgr.clone();
+        let timer2 = timer.clone();
+        let hidden2 = user_hidden.clone();
+        let fs2 = fs_suppressed.clone();
+        timer.start(TimerMode::SingleShot, d, move || {
+            if let Some(ui) = weak.upgrade() {
+                service_schedules(&ui, &mgr2, &timer2, &hidden2, &fs2);
+            }
+        });
+    }
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -541,6 +593,42 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     bindings::tasks::register(&ui);
+
+    // --- jadwal / pengingat lokal (Timer, mode Schedule) ---
+    let schedule_timer = Rc::new(Timer::default());
+    let schedule_mgr = Rc::new(RefCell::new(schedule::ScheduleManager::new()));
+    {
+        let weak = ui.as_weak();
+        let mgr = schedule_mgr.clone();
+        let timer = schedule_timer.clone();
+        let hidden = user_hidden.clone();
+        let fs = fs_suppressed.clone();
+        let on_change = Rc::new(move || {
+            if let Some(ui) = weak.upgrade() {
+                service_schedules(&ui, &mgr, &timer, &hidden, &fs);
+            }
+        });
+        bindings::schedule::register(&ui, schedule_mgr.clone(), on_change);
+    }
+
+    // fokus keyboard untuk kolom input Jadwal (pola yang sama dengan Tasks)
+    {
+        let weak = ui.as_weak();
+        ui.on_schedule_input_focused(move || {
+            if let Some(ui) = weak.upgrade() {
+                focus_overlay(&ui);
+            }
+        });
+    }
+
+    // keluarkan pengingat terlewat saat startup lalu pasang timer untuk terdekat
+    service_schedules(
+        &ui,
+        &schedule_mgr,
+        &schedule_timer,
+        &user_hidden,
+        &fs_suppressed,
+    );
 
     // --- tray ---
     let tray = AppTray::new()?;

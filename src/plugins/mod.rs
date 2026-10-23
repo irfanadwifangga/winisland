@@ -5,6 +5,7 @@ pub mod gpu;
 pub mod media;
 pub mod notif;
 pub mod notif_text;
+pub mod schedule;
 pub mod stats;
 pub mod tasks;
 pub mod timer;
