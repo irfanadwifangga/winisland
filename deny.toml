@@ -1,0 +1,29 @@
+# Konfigurasi `cargo-deny` (audit lisensi dependensi).
+# Jalankan: cargo deny check licenses
+#
+# Proyek ini berlisensi MIT dan memakai Slint lewat
+# LicenseRef-Slint-Royalty-free-2.0 (atribusi wajib, lihat README),
+# sehingga cabang itu yang diizinkan dari pilihan lisensi Slint.
+
+[graph]
+# Debug/dev dependencies ikut diaudit; tidak ada fitur tambahan.
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Unlicense",
+    "Unicode-3.0",
+    "Zlib",
+    "LicenseRef-Slint-Royalty-free-2.0",
+]
+
+# Semua lisensi lain (misalnya GPL pada jalur dependensi Slint yang tidak
+# dipakai) harus ditambahkan secara sadar, bukan diam-diam.
